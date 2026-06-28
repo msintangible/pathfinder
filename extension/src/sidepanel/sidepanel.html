@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pathfinder</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1 class="title">Pathfinder</h1>
+      <span class="version">v0.1.0</span>
+    </header>
+
+    <section class="card">
+      <h2 class="card__title">This page</h2>
+      <div id="detection" class="detection">
+        <span class="badge badge--neutral">Checking…</span>
+      </div>
+      <dl id="signals" class="signals" hidden></dl>
+    </section>
+
+    <section class="card">
+      <h2 class="card__title">Backend</h2>
+      <div id="health" class="health">
+        <span class="badge badge--neutral">Unknown</span>
+      </div>
+      <button id="check-health" class="btn">Check connection</button>
+    </section>
+
+    <footer class="footer">
+      Phase 1 — detection &amp; connectivity only.
+    </footer>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>
