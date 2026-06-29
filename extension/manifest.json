@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Pathfinder",
+  "version": "0.1.0",
+  "description": "AI-powered job application agent. Detects job pages and assists with tailored applications.",
+
+  "permissions": ["storage", "sidePanel", "scripting", "activeTab"],
+
+  "host_permissions": ["http://localhost:8000/*"],
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_title": "Pathfinder"
+  },
+
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
