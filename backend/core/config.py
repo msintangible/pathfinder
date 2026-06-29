@@ -11,9 +11,9 @@ class Settings(BaseSettings):
     debug: bool = False
     environment: str = "development"
 
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/pathfinder"
-
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
@@ -28,9 +28,11 @@ class Settings(BaseSettings):
 
     # AI providers
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    gemini_api_key: str = ""
     google_project_id: str = ""
     google_location: str = "us-central1"
-    openai_api_key: str = ""
+
 
     # Object storage
     s3_bucket: str = "pathfinder-documents"

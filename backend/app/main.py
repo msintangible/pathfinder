@@ -1,6 +1,6 @@
 import uuid
 from contextlib import asynccontextmanager
-
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -76,8 +76,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
-# from api.v1.router import router as v1_router
-# app.include_router(v1_router, prefix="/v1")
+from api.v1.router import router as v1_router  # noqa: E402
+app.include_router(v1_router, prefix="/v1")
 
 
 # ---------------------------------------------------------------------------
@@ -86,3 +86,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 @app.get("/health", tags=["meta"])
 async def health():
     return {"status": "ok", "version": "0.1.0"}
+
+
+if __name__ == "__main__":
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8003, reload=True)
