@@ -17,7 +17,7 @@
 
 // Backend base URL. Must be covered by host_permissions in manifest.json so
 // the service worker's fetch bypasses CORS for this origin (MV3 behaviour).
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = "http://localhost:8003";
 
 // chrome.storage key prefix for per-tab job-page detection results.
 const DETECTION_PREFIX = "detection:";
