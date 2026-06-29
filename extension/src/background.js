@@ -15,9 +15,18 @@
  * (see DETECTION_PREFIX) rather than a module-level variable.
  */
 
-// Backend base URL. Must be covered by host_permissions in manifest.json so
-// the service worker's fetch bypasses CORS for this origin (MV3 behaviour).
-const API_BASE_URL = "http://localhost:8003";
+// Backend base URL. Configurable via chrome.storage.local ("backendUrl") so we
+// never hard-assume a port — the backend is owned separately and may run on a
+// different port. Default matches the backend's committed run config (8003).
+// The chosen URL must be covered by host_permissions in manifest.json so the
+// service worker's fetch bypasses CORS for that origin (MV3 behaviour).
+const DEFAULT_API_BASE_URL = "http://localhost:8003";
+
+/** Resolve the configured backend base URL (no trailing slash). */
+async function getBaseUrl() {
+  const { backendUrl } = await chrome.storage.local.get("backendUrl");
+  return (backendUrl || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
+}
 
 // chrome.storage key prefix for per-tab job-page detection results.
 const DETECTION_PREFIX = "detection:";
@@ -91,7 +100,8 @@ async function getDetection(tabId) {
  */
 async function checkBackendHealth() {
   try {
-    const res = await fetch(`${API_BASE_URL}/health`, {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/health`, {
       method: "GET",
       headers: { Accept: "application/json" },
     });

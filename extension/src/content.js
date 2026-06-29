@@ -122,3 +122,36 @@ function run() {
 }
 
 run();
+
+// ---------------------------------------------------------------------------
+// Phase 2 — automatic page scrape.
+//
+// Scrape ALL visible text on the page into a JSON object. This runs on demand
+// when the side panel asks (SCRAPE_PAGE) — no user button. The side panel
+// displays the result; sending it to the backend is a later phase.
+// ---------------------------------------------------------------------------
+
+const MAX_SCRAPE_CHARS = 100000;
+
+/** Collect all visible page text into a JSON-serialisable object. */
+function scrapePage() {
+  const raw = (document.body?.innerText || "").replace(/\n{3,}/g, "\n\n").trim();
+  const truncated = raw.length > MAX_SCRAPE_CHARS;
+  return {
+    url: location.href,
+    title: document.title || null,
+    scrapedAt: new Date().toISOString(),
+    length: raw.length,
+    truncated,
+    text: truncated ? raw.slice(0, MAX_SCRAPE_CHARS) : raw,
+  };
+}
+
+// The side panel requests a fresh scrape whenever it opens or the page changes.
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "SCRAPE_PAGE") {
+    sendResponse(scrapePage());
+    return false; // synchronous response
+  }
+  return false;
+});

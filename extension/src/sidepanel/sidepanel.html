@@ -13,11 +13,21 @@
     </header>
 
     <section class="card">
-      <h2 class="card__title">This page</h2>
+      <h2 class="card__title">Current page</h2>
       <div id="detection" class="detection">
         <span class="badge badge--neutral">Checking…</span>
       </div>
+      <a id="page-url" class="page-url" href="#" target="_blank" rel="noopener"></a>
       <dl id="signals" class="signals" hidden></dl>
+    </section>
+
+    <section class="card">
+      <div class="card__head">
+        <h2 class="card__title">Scraped text (JSON)</h2>
+        <button id="copy-json" class="btn-link" hidden>Copy</button>
+      </div>
+      <p id="scrape-status" class="status" hidden></p>
+      <pre id="scrape-json" class="json" hidden></pre>
     </section>
 
     <section class="card">
@@ -25,11 +35,15 @@
       <div id="health" class="health">
         <span class="badge badge--neutral">Unknown</span>
       </div>
-      <button id="check-health" class="btn">Check connection</button>
+      <label class="field">
+        <span class="field__label">Backend URL</span>
+        <input id="backend-url" class="input" type="text" placeholder="http://localhost:8003" />
+      </label>
+      <button id="check-health" class="btn btn--secondary">Check connection</button>
     </section>
 
     <footer class="footer">
-      Phase 1 — detection &amp; connectivity only.
+      Phase 2 — auto-scrape page text.
     </footer>
 
     <script src="sidepanel.js"></script>

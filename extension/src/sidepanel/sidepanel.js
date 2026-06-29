@@ -1,16 +1,38 @@
 /**
- * Pathfinder side-panel UI controller (Phase 1).
+ * Pathfinder side-panel UI controller (Phase 2).
  *
- * The side panel is the user-facing review surface (TDD 5.3). In Phase 1 it
- * only shows: (a) the current page's job-detection result, and (b) backend
- * connectivity. Like the content script, it talks only to the service worker
- * (TDD 6.1) — never directly to the backend.
+ * The side panel is the user-facing surface (TDD 5.3). It:
+ *   - shows the active tab's job-detection result and URL,
+ *   - automatically scrapes all visible page text into JSON and displays it
+ *     (no button — runs on open, on tab switch, and when a page finishes
+ *     loading),
+ *   - reports backend connectivity (via the service worker).
+ *
+ * Detection and connectivity go through the service worker (TDD 6.1). The raw
+ * page scrape is a pure DOM read, so the panel asks the content script for it
+ * directly via chrome.tabs.sendMessage.
  */
 
 const detectionEl = document.getElementById("detection");
 const signalsEl = document.getElementById("signals");
+const pageUrlEl = document.getElementById("page-url");
+const scrapeStatusEl = document.getElementById("scrape-status");
+const scrapeJsonEl = document.getElementById("scrape-json");
+const copyJsonBtn = document.getElementById("copy-json");
 const healthEl = document.getElementById("health");
 const checkHealthBtn = document.getElementById("check-health");
+const backendUrlInput = document.getElementById("backend-url");
+
+const DEFAULT_BACKEND_URL = "http://localhost:8003";
+
+/** Most recent scrape JSON string, for the Copy button. */
+let lastScrapeJson = "";
+
+/** Return the active tab (or null). */
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab ?? null;
+}
 
 /** Helper: render a coloured status badge into a container. */
 function setBadge(container, text, variant) {
@@ -21,9 +43,13 @@ function setBadge(container, text, variant) {
   container.appendChild(span);
 }
 
+// ---------------------------------------------------------------------------
+// Detection
+// ---------------------------------------------------------------------------
+
 /** Ask the service worker for the active tab's detection result and render it. */
 async function loadDetection() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = await getActiveTab();
   if (!tab) {
     setBadge(detectionEl, "No active tab", "neutral");
     return;
@@ -74,6 +100,87 @@ function renderSignals(signals) {
   signalsEl.hidden = false;
 }
 
+// ---------------------------------------------------------------------------
+// Automatic page scrape
+// ---------------------------------------------------------------------------
+
+/** Scrape the active tab's text and render the URL + JSON. Runs automatically. */
+async function scrapeActivePage() {
+  const tab = await getActiveTab();
+  if (!tab) {
+    showScrapeStatus("No active tab.", true);
+    return;
+  }
+
+  let data;
+  try {
+    data = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" });
+  } catch {
+    // Content script not present (e.g. chrome:// pages, or tab opened before
+    // the extension loaded). Show the tab URL we do have, and guide the user.
+    renderUrl(tab.url || "");
+    showScrapeStatus("Can't read this page. Reload the tab and reopen.", true);
+    scrapeJsonEl.hidden = true;
+    copyJsonBtn.hidden = true;
+    return;
+  }
+
+  if (!data) {
+    showScrapeStatus("No data returned from the page.", true);
+    return;
+  }
+
+  renderUrl(data.url);
+  renderScrapeJson(data);
+}
+
+/** Show the current page URL as a clickable link. */
+function renderUrl(url) {
+  if (!url) {
+    pageUrlEl.textContent = "";
+    pageUrlEl.removeAttribute("href");
+    return;
+  }
+  pageUrlEl.textContent = url;
+  pageUrlEl.href = url;
+}
+
+/** Pretty-print the scrape result as JSON in the panel. */
+function renderScrapeJson(data) {
+  lastScrapeJson = JSON.stringify(data, null, 2);
+  scrapeJsonEl.textContent = lastScrapeJson;
+  scrapeJsonEl.hidden = false;
+  copyJsonBtn.hidden = false;
+
+  const note = data.truncated
+    ? `Scraped ${data.length} chars (truncated for display).`
+    : `Scraped ${data.length} chars.`;
+  showScrapeStatus(note, false);
+}
+
+/** Show a status line in the scrape card. */
+function showScrapeStatus(text, isError) {
+  scrapeStatusEl.textContent = text;
+  scrapeStatusEl.className = isError ? "status status--err" : "status";
+  scrapeStatusEl.hidden = false;
+}
+
+/** Copy the current scrape JSON to the clipboard. */
+async function copyJson() {
+  if (!lastScrapeJson) return;
+  try {
+    await navigator.clipboard.writeText(lastScrapeJson);
+    copyJsonBtn.textContent = "Copied";
+    setTimeout(() => (copyJsonBtn.textContent = "Copy"), 1500);
+  } catch {
+    copyJsonBtn.textContent = "Copy failed";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backend connectivity
+// ---------------------------------------------------------------------------
+
 /** Trigger a backend health check via the service worker. */
 async function checkHealth() {
   checkHealthBtn.disabled = true;
@@ -90,8 +197,42 @@ async function checkHealth() {
   checkHealthBtn.disabled = false;
 }
 
+/** Load the saved backend URL into the input. */
+async function loadBackendUrl() {
+  const { backendUrl } = await chrome.storage.local.get("backendUrl");
+  backendUrlInput.value = backendUrl || DEFAULT_BACKEND_URL;
+}
+
+/** Persist the backend URL when the user edits it, then re-check health. */
+async function saveBackendUrl() {
+  const value = backendUrlInput.value.trim();
+  await chrome.storage.local.set({ backendUrl: value || DEFAULT_BACKEND_URL });
+  checkHealth();
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+/** Refresh everything tied to the active tab. */
+function refreshForActiveTab() {
+  loadDetection();
+  scrapeActivePage();
+}
+
 checkHealthBtn.addEventListener("click", checkHealth);
+backendUrlInput.addEventListener("change", saveBackendUrl);
+copyJsonBtn.addEventListener("click", copyJson);
+
+// Auto-refresh when the user switches tabs or a page finishes loading.
+chrome.tabs.onActivated.addListener(refreshForActiveTab);
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status === "complete" && tab.active) {
+    refreshForActiveTab();
+  }
+});
 
 // Initial render.
-loadDetection();
+loadBackendUrl();
 checkHealth();
+refreshForActiveTab();
