@@ -26,15 +26,8 @@ const analyseJobBtn = document.getElementById("analyse-job");
 const analysisStatusEl = document.getElementById("analysis-status");
 const analysisJsonEl = document.getElementById("analysis-json");
 
-// Profile
-const cvFileInput = document.getElementById("cv-file");
-const uploadArea = document.getElementById("upload-area");
-const uploadLabel = document.getElementById("upload-label");
-const linkedinInput = document.getElementById("linkedin-url");
-const githubInput = document.getElementById("github-url");
-const portfolioInput = document.getElementById("portfolio-url");
-const saveProfileBtn = document.getElementById("save-profile");
-const profileStatusEl = document.getElementById("profile-status");
+// NOTE: the "Your Profile" section is now owned by the ES module
+// profile/index.js (mounted into #profile-root). Profile logic lives there.
 
 const DEFAULT_BACKEND_URL = "http://localhost:8003";
 
@@ -284,59 +277,6 @@ async function analyseJob() {
 }
 
 // ---------------------------------------------------------------------------
-// Profile
-// ---------------------------------------------------------------------------
-
-/** Update the upload area when the user picks a file. */
-function onFileSelected() {
-  const file = cvFileInput.files[0];
-  if (file) {
-    uploadLabel.textContent = file.name;
-    uploadArea.classList.add("upload--selected");
-  } else {
-    uploadLabel.textContent = "Click to choose file";
-    uploadArea.classList.remove("upload--selected");
-  }
-}
-
-/** Restore saved URLs from storage into the inputs. */
-async function loadProfile() {
-  const { profileUrls } = await chrome.storage.local.get("profileUrls");
-  if (!profileUrls) return;
-  linkedinInput.value = profileUrls.linkedin || "";
-  githubInput.value = profileUrls.github || "";
-  portfolioInput.value = profileUrls.portfolio || "";
-}
-
-/** Persist the URL inputs to storage. The CV file stays in memory until the
- *  backend call (Phase 2) — File objects cannot be stored in chrome.storage. */
-async function saveProfile() {
-  saveProfileBtn.disabled = true;
-
-  const urls = {
-    linkedin: linkedinInput.value.trim(),
-    github: githubInput.value.trim(),
-    portfolio: portfolioInput.value.trim(),
-  };
-
-  await chrome.storage.local.set({ profileUrls: urls });
-
-  const file = cvFileInput.files[0];
-  const msg = file
-    ? `Saved. CV ready: ${file.name}`
-    : "URLs saved. No CV selected yet.";
-  showProfileStatus(msg, false);
-
-  saveProfileBtn.disabled = false;
-}
-
-function showProfileStatus(text, isError) {
-  profileStatusEl.textContent = text;
-  profileStatusEl.className = isError ? "status status--err" : "status";
-  profileStatusEl.hidden = false;
-}
-
-// ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------
 
@@ -350,8 +290,6 @@ checkHealthBtn.addEventListener("click", checkHealth);
 backendUrlInput.addEventListener("change", saveBackendUrl);
 copyJsonBtn.addEventListener("click", copyJson);
 analyseJobBtn.addEventListener("click", analyseJob);
-cvFileInput.addEventListener("change", onFileSelected);
-saveProfileBtn.addEventListener("click", saveProfile);
 
 // Auto-refresh when the user switches tabs or a page finishes loading.
 chrome.tabs.onActivated.addListener(refreshForActiveTab);
@@ -363,6 +301,5 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
 
 // Initial render.
 loadBackendUrl();
-loadProfile();
 checkHealth();
 refreshForActiveTab();

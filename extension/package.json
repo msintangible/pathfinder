@@ -2,9 +2,10 @@
   "name": "pathfinder-extension",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Pathfinder Chrome extension (frontend). Plain JS — no build step. devDependencies are test-only and do not affect how the extension loads.",
   "scripts": {
-    "test": "node tests/scrape.test.mjs"
+    "test": "node tests/scrape.test.mjs && node tests/profileMapper.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"

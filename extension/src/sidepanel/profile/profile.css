@@ -1,0 +1,127 @@
+/* Profile UI — reuses the :root design tokens from sidepanel.css. */
+
+/* Status variants (sidepanel.css only defines --err). */
+.status--ok { color: #4ade80; }
+.status--warn { color: #fbbf24; }
+
+/* --- Setup / upload --- */
+.pf-setup { display: flex; flex-direction: column; gap: 10px; }
+
+.pf-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  padding: 14px;
+  text-align: center;
+  border: 1.5px dashed #475569;
+  border-radius: var(--radius);
+  background: #0f172a;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+.pf-drop--over { border-color: var(--accent); color: var(--text); background: #15233f; }
+
+.pf-urls { display: flex; flex-direction: column; gap: 6px; }
+
+.pf-progress {
+  height: 6px;
+  background: #334155;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.pf-progress__bar { height: 100%; width: 0; background: var(--accent); transition: width 0.15s ease; }
+
+/* --- Card / sections --- */
+.pf-card { display: flex; flex-direction: column; gap: 14px; }
+
+.pf-section { display: flex; flex-direction: column; gap: 8px; }
+.pf-section__title {
+  font-size: 13px;
+  margin: 0;
+  color: var(--text);
+  border-bottom: 1px solid #334155;
+  padding-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pf-review {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* --- Fields --- */
+.pf-field { display: flex; flex-direction: column; gap: 3px; }
+.pf-field--review { border-left: 2px solid #fbbf24; padding-left: 8px; }
+
+.pf-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pf-value { font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.pf-value--empty { color: #64748b; font-style: italic; }
+
+.pf-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.pf-edit, .pf-save {
+  align-self: flex-start;
+  margin-top: 2px;
+  border: none;
+  background: none;
+  color: #93c5fd;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.pf-save { font-weight: 600; }
+
+/* --- Chips --- */
+.pf-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pf-chip { background: #334155; border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+
+/* --- List entries --- */
+.pf-list { display: flex; flex-direction: column; gap: 10px; }
+.pf-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: var(--radius);
+}
+.pf-remove { align-self: flex-end; border: none; background: none; color: #fca5a5; font-size: 12px; cursor: pointer; }
+.pf-add {
+  align-self: flex-start;
+  border: 1px dashed #475569;
+  background: none;
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pf-add:hover { color: var(--text); border-color: var(--accent); }
