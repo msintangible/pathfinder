@@ -4,38 +4,76 @@ Manifest V3 extension — the sensing/actuation layer for Pathfinder (TDD Sectio
 Content scripts and the side panel never call the backend directly; all network
 I/O is routed through the service worker (TDD 6.1).
 
-## Phase 2 (current) — auto-scrape page text
+## Structure
 
 - **`manifest.json`** — MV3 manifest. Permissions: `storage`, `sidePanel`,
   `scripting`, `activeTab`. Host permission `http://localhost/*` (any local port).
-- **`src/background.js`** — service worker. Message router, per-tab badge state,
-  and the backend `/health` proxy. Backend URL is configurable via
-  `chrome.storage.local` (`backendUrl`), default `http://localhost:8003`.
-- **`src/content.js`** — job-page detection (Tier 1 URL + Tier 2 DOM heuristics,
-  TDD 6.2) and `scrapePage()`, which collects all visible page text into a JSON
-  object on request. Sensing only.
-- **`src/sidepanel/`** — the UI. Shows the current page's detection result and
-  **URL**, and **automatically** scrapes the page text into JSON and displays it
-  (runs on open, on tab switch, and when a page finishes loading — no button).
-  Also shows backend connectivity with a configurable URL field.
+- **`src/background/`** — service worker (ES module). `index.js` routes
+  messages + owns badge state; `api.js` is the only layer that calls the backend
+  (`/health`, `/v1/jobs/analyze`); `storage.js` wraps per-tab detection state.
+  Backend URL is configurable via `chrome.storage.local` (`backendUrl`),
+  default `http://localhost:8003`.
+- **`src/content/`** — content scripts (plain scripts sharing global scope,
+  loaded in order: `detect.js`, `scrape.js`, `index.js`). `detect.js` does
+  job-page detection (Tier 1 URL + Tier 2 DOM heuristics, TDD 6.2); `scrape.js`
+  extracts the posting (see below); `index.js` reports detection and answers
+  `SCRAPE_PAGE`.
+- **`src/sidepanel/`** — the UI. Shows the detection result + **URL**,
+  **automatically** scrapes the page into JSON on open / tab switch / page load,
+  and has an **Analyse job** action and a profile section. Backend connectivity
+  with a configurable URL field.
 
 No build step — this is plain JS and loads directly. (Migrates to React + Vite
 in a later phase when the resume diff/review UI needs it.)
 
-### Scrape output shape
+### Scraper (`src/content/scrape.js`)
+
+Structured-first extraction, in priority order:
+
+1. **JSON-LD `schema.org/JobPosting`** — authoritative, noise-free. Yields the
+   `structured` fields (title, company, location, salary, employment type,
+   dates) and a clean description used as the body `text`.
+2. **Readable content** — when JSON-LD is missing/thin, the best content
+   container is chosen by a readability-style score (text density vs link
+   density + class/id hints), then its visible text is extracted via a live-DOM
+   `TreeWalker` that skips hidden + noise nodes and preserves block line breaks.
+   It never clones or mutates the page.
+3. **Body fallback** — for unrecognised pages.
+
+Output shape:
 
 ```json
 {
   "url": "https://…",
   "title": "…",
   "scrapedAt": "ISO-8601",
+  "source": "json-ld | readable | body",
+  "structured": {
+    "title": "…", "company": "…", "location": "…",
+    "employmentType": "…", "salary": "…", "datePosted": "…", "validThrough": "…"
+  },
   "length": 1234,
   "truncated": false,
-  "text": "…all visible page text…"
+  "text": "…clean job description…"
 }
 ```
 
-Sending this to the backend for analysis is a later phase.
+`structured` is `null` when no structured data is found. `source` signals
+extraction quality. Text is capped at 30,000 chars (word-boundary truncation).
+
+### Tests
+
+The scraper is covered by a jsdom test suite (test-only; does not affect how the
+extension loads — it ships as plain JS):
+
+```bash
+cd extension
+npm install   # one-time, installs jsdom (dev only; node_modules is gitignored)
+npm test
+```
+
+Covers JSON-LD structured extraction, multi-posting selection, readable-content
+noise/hidden removal, truncation, and the output contract.
 
 ## Load it in Chrome
 

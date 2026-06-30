@@ -1,0 +1,4 @@
+# Test-only dependencies. The extension itself has no build step and ships as
+# plain JS; node_modules exists solely to run `npm test` (jsdom).
+node_modules/
+package-lock.json
