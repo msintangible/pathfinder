@@ -1,23 +1,26 @@
 import json
+import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
 from schemas.profile import CandidateProfileInput
 
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-_SYSTEM_PROMPT = """You are a candidate profile extractor. You receive raw information about a job candidate from multiple sources and extract a single, rich, structured profile.
+
+_SYSTEM_PROMPT = """Extract a candidate profile from the input sources into JSON.
 
 Rules:
-- Never invent skills, experience, or qualifications not present in the input.
-- Never infer employment history that is not explicitly stated.
-- Prefer exact extraction over paraphrasing. Preserve technical terminology.
-- When the same information appears in multiple sources, merge it into one entry. Do not duplicate.
-- Return null for string fields that cannot be determined.
-- Return empty arrays for list fields with no data.
-- Return valid JSON only. No explanation, no markdown, no extra text.
+- Don't invent skills, experience, or qualifications not in the input.
+- Don't infer employment history not explicitly stated.
+- Merge the same info from multiple sources into one entry, not duplicates.
+- Unknown values: null.
+- Unknown arrays: [].
 
-Return ONLY valid JSON with this exact structure:
+Schema:
 {
   "name": string or null,
   "headline": string or null,
@@ -99,15 +102,11 @@ Return ONLY valid JSON with this exact structure:
 
 class CandidateProfileAgent:
     def __init__(self) -> None:
-        self._client = genai.Client(
-            vertexai=True,
-            project="farmpulse-496900",
-            location="us-central1",
-        )
+        self._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     def analyze(self, input: CandidateProfileInput) -> dict:
         response = self._client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             contents=self._build_content(input),
             config=types.GenerateContentConfig(
                 system_instruction=_SYSTEM_PROMPT,

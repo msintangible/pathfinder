@@ -38,7 +38,7 @@ const NOISE_SELECTORS = [
 
 // 20 000 chars is more than enough for any job description and keeps the
 // payload lean for the backend AI call.
-const MAX_CHARS = 500;
+const MAX_CHARS = 5000;
 
 /**
  * Find the most relevant content container in the page.

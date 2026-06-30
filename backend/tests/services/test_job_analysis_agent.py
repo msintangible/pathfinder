@@ -6,7 +6,7 @@ Each test corresponds to a requirement from the agent spec:
   responsibilities, qualifications, and ATS keywords.
 - Return null for fields that cannot be determined.
 - Return empty arrays for list fields with no data.
-- Prepend the source URL to content when provided.
+- Accept an optional source URL without sending it to the model.
 - Use JSON response mode and temperature=0 for deterministic output.
 """
 import json
@@ -183,15 +183,14 @@ async def test_returns_empty_arrays_for_undetermined_list_fields(mock_genai):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
-async def test_prepends_url_when_provided(mock_genai):
+async def test_url_is_not_sent_to_model(mock_genai):
     mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
     url = "https://jobs.example.com/12345"
 
     await JobAnalysisAgent().analyze(raw_text="Job posting text", url=url)
 
     contents = mock_genai.aio.models.generate_content.call_args.kwargs["contents"]
-    assert contents.startswith(f"Source URL: {url}")
-    assert "Job posting text" in contents
+    assert contents == "Job posting text"
 
 
 @pytest.mark.anyio
