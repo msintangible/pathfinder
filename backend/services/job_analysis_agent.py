@@ -5,6 +5,23 @@ from google.genai import types
 
 from core.config import settings
 
+# Job descriptions rarely need more than this to extract all structured fields.
+# Keeping the window tight reduces Gemini latency and prevents DB connection
+# timeouts that occur when an oversized AI call holds the request open too long.
+_MAX_CHARS = 500
+
+
+def _truncate(text: str) -> str:
+    """Trim text to _MAX_CHARS, cutting at the last newline or space."""
+    if len(text) <= _MAX_CHARS:
+        return text
+    cut = text.rfind("\n", 0, _MAX_CHARS)
+    if cut == -1:
+        cut = text.rfind(" ", 0, _MAX_CHARS)
+    if cut == -1:
+        cut = _MAX_CHARS
+    return text[:cut] + "\n[... text truncated for analysis]"
+
 
 _SYSTEM_PROMPT = """You are a job posting parser. Extract structured information from the job posting text.
 
@@ -38,9 +55,10 @@ class JobAnalysisAgent:
             location="us-central1",
         )
 
-    def analyze(self, raw_text: str, url: str | None = None) -> dict:
-        content = f"Source URL: {url}\n\n{raw_text}" if url else raw_text
-        response = self._client.models.generate_content(
+    async def analyze(self, raw_text: str, url: str | None = None) -> dict:
+        text = _truncate(raw_text)
+        content = f"Source URL: {url}\n\n{text}" if url else text
+        response = await self._client.aio.models.generate_content(
             model="gemini-2.5-flash",
             contents=content,
             config=types.GenerateContentConfig(

@@ -9,7 +9,7 @@
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
 
   "background": {
-    "service_worker": "src/background.js",
+    "service_worker": "src/background/index.js",
     "type": "module"
   },
 
@@ -24,7 +24,11 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/content.js"],
+      "js": [
+        "src/content/detect.js",
+        "src/content/scrape.js",
+        "src/content/index.js"
+      ],
       "run_at": "document_idle"
     }
   ]

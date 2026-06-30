@@ -241,6 +241,49 @@ Do not over-engineer.
 
 ---
 
+# Maintainability, Longevity, and Simplicity
+
+Every decision must be judged against three questions:
+
+1. **Can the next engineer understand this without asking anyone?**
+2. **Will this still make sense in 12 months when the context is gone?**
+3. **Is this the simplest thing that correctly solves the problem?**
+
+If the answer to any of these is no, reconsider before writing.
+
+## Simplicity
+
+* Prefer the obvious solution over the clever one.
+* If you need a comment to explain what the code does, the code is probably too complex. Rewrite it so it speaks for itself.
+* Three clear lines beat one dense line.
+* Add complexity only when the simple version provably cannot solve the problem.
+* Never introduce a pattern, abstraction, or dependency to handle a case that does not exist yet.
+
+## Maintainability
+
+* Every function, class, and module must have one clear responsibility. If you find yourself writing "and" in a description, split it.
+* Public interfaces must be stable. Internals can change freely. Never expose more than the caller needs.
+* Consistent naming across the codebase is more important than the name itself. Match the conventions already present.
+* When you extend something, leave it cleaner than you found it — but only in scope. Do not refactor unrelated code.
+* Never leave dead code, unused imports, or commented-out blocks. Delete them.
+
+## Longevity
+
+* Favour well-established libraries and standard-library primitives over cutting-edge ones with uncertain futures.
+* Avoid tight coupling to a specific AI provider, cloud vendor, or third-party service. Use a thin abstraction at the boundary so the provider can be swapped without rewriting the core.
+* Every non-obvious constraint — a timeout chosen for a reason, a field deliberately left nullable, a check that guards against a known edge case — must be documented at the point it appears, not in a separate document that will fall out of sync.
+* Data that is stored must be versioned or migratable. Never write a schema that cannot evolve.
+* If you deprecate something, remove it in the same PR. Deprecated-but-present code rots and confuses.
+
+## What this means in practice
+
+* Before adding a new dependency, ask: is there already something in the project that does this? Can the standard library do it? Is this dependency actively maintained?
+* Before adding a new layer of indirection, ask: what problem does this solve today, concretely?
+* Before writing something complex, write the simplest version first. Optimise only after you can measure the problem.
+* When in doubt between two approaches of equal correctness, always pick the one that is easier to delete.
+
+---
+
 # Explain Decisions
 
 Whenever introducing something new, briefly explain:

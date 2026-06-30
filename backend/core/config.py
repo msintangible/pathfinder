@@ -12,8 +12,8 @@ class Settings(BaseSettings):
     environment: str = "development"
 
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/pathfinder"
+    # Database — ssl=disable required for local Docker postgres (no SSL configured)
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/pathfinder?ssl=disable"
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 

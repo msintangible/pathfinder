@@ -175,3 +175,39 @@ body {
   text-align: center;
   margin-top: 4px;
 }
+
+/* Upload area — wraps the hidden file input */
+.upload {
+  display: block;
+  margin-top: 4px;
+  padding: 18px 12px;
+  border: 1.5px dashed #334155;
+  border-radius: var(--radius);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.upload:hover {
+  border-color: var(--accent);
+}
+
+.upload__input {
+  display: none; /* triggered by the parent <label> click */
+}
+
+.upload__label {
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* State: file has been selected */
+.upload--selected {
+  border-style: solid;
+  border-color: var(--ok);
+}
+
+.upload--selected .upload__label {
+  color: var(--text);
+}

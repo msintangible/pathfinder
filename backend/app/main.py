@@ -12,6 +12,7 @@ from database.session import engine
 from models.base import Base
 
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup (use Alembic in production instead)

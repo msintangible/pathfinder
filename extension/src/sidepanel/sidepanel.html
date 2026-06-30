@@ -31,6 +31,36 @@
     </section>
 
     <section class="card">
+      <h2 class="card__title">Your Profile</h2>
+
+      <label class="field">
+        <span class="field__label">CV / Resume (.pdf, .docx)</span>
+        <label class="upload" id="upload-area">
+          <input id="cv-file" type="file" accept=".pdf,.doc,.docx" class="upload__input">
+          <span id="upload-label" class="upload__label">Click to choose file</span>
+        </label>
+      </label>
+
+      <label class="field">
+        <span class="field__label">LinkedIn</span>
+        <input id="linkedin-url" class="input" type="url" placeholder="https://linkedin.com/in/you">
+      </label>
+
+      <label class="field">
+        <span class="field__label">GitHub</span>
+        <input id="github-url" class="input" type="url" placeholder="https://github.com/you">
+      </label>
+
+      <label class="field">
+        <span class="field__label">Portfolio (optional)</span>
+        <input id="portfolio-url" class="input" type="url" placeholder="https://yoursite.com">
+      </label>
+
+      <p id="profile-status" class="status" hidden></p>
+      <button id="save-profile" class="btn">Save Profile</button>
+    </section>
+
+    <section class="card">
       <h2 class="card__title">Backend</h2>
       <div id="health" class="health">
         <span class="badge badge--neutral">Unknown</span>
@@ -40,6 +70,13 @@
         <input id="backend-url" class="input" type="text" placeholder="http://localhost:8003" />
       </label>
       <button id="check-health" class="btn btn--secondary">Check connection</button>
+    </section>
+
+    <section class="card">
+      <h2 class="card__title">Job Analysis</h2>
+      <p id="analysis-status" class="status" hidden></p>
+      <button id="analyse-job" class="btn">Analyse this page</button>
+      <pre id="analysis-json" class="json" hidden></pre>
     </section>
 
     <footer class="footer">

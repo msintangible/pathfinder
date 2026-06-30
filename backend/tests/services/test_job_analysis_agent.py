@@ -10,7 +10,7 @@ Each test corresponds to a requirement from the agent spec:
 - Use JSON response mode and temperature=0 for deterministic output.
 """
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -66,10 +66,15 @@ _SPARSE_ANALYSIS = {
 
 @pytest.fixture
 def mock_genai():
-    """Patches genai in the agent module and yields the mock client."""
+    """Patches genai in the agent module and yields the mock client.
+
+    aio.models.generate_content is pre-configured as an AsyncMock because
+    JobAnalysisAgent.analyze() now awaits it.
+    """
     with patch("services.job_analysis_agent.genai") as patched:
         mock_client = MagicMock()
         patched.Client.return_value = mock_client
+        mock_client.aio.models.generate_content = AsyncMock()
         yield mock_client
 
 
@@ -77,62 +82,69 @@ def mock_genai():
 # Field extraction tests
 # ---------------------------------------------------------------------------
 
-def test_extracts_title_and_company(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_extracts_title_and_company(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("Senior Software Engineer at Acme Corp...")
+    result = await JobAnalysisAgent().analyze("Senior Software Engineer at Acme Corp...")
 
     assert result["title"] == "Senior Software Engineer"
     assert result["company"] == "Acme Corp"
 
 
-def test_extracts_experience_level(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_extracts_experience_level(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("...requires 5+ years...")
+    result = await JobAnalysisAgent().analyze("...requires 5+ years...")
 
     assert result["experience"] == "5+ years of backend experience"
 
 
-def test_extracts_skills(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_extracts_skills(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("...Python, Django required...")
+    result = await JobAnalysisAgent().analyze("...Python, Django required...")
 
     assert "Python" in result["skills"]
     assert "Django" in result["skills"]
 
 
-def test_extracts_technologies(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_extracts_technologies(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("...Docker, Kubernetes...")
+    result = await JobAnalysisAgent().analyze("...Docker, Kubernetes...")
 
     assert "Docker" in result["technologies"]
     assert "Kubernetes" in result["technologies"]
 
 
-def test_extracts_responsibilities(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_extracts_responsibilities(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("...Design and implement scalable microservices...")
+    result = await JobAnalysisAgent().analyze("...Design and implement scalable microservices...")
 
     assert len(result["responsibilities"]) == 3
     assert "Design and implement scalable microservices" in result["responsibilities"]
 
 
-def test_extracts_qualifications(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_extracts_qualifications(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("...Bachelor's degree required...")
+    result = await JobAnalysisAgent().analyze("...Bachelor's degree required...")
 
     assert any("Bachelor" in q for q in result["qualifications"])
 
 
-def test_extracts_ats_keywords(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_extracts_ats_keywords(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("...backend API microservices...")
+    result = await JobAnalysisAgent().analyze("...backend API microservices...")
 
     assert "microservices" in result["keywords"]
     assert "backend" in result["keywords"]
@@ -142,20 +154,22 @@ def test_extracts_ats_keywords(mock_genai):
 # Null / empty-array handling
 # ---------------------------------------------------------------------------
 
-def test_returns_null_for_undetermined_string_fields(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_SPARSE_ANALYSIS)
+@pytest.mark.anyio
+async def test_returns_null_for_undetermined_string_fields(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_SPARSE_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("We are hiring! Apply now.")
+    result = await JobAnalysisAgent().analyze("We are hiring! Apply now.")
 
     assert result["title"] is None
     assert result["company"] is None
     assert result["experience"] is None
 
 
-def test_returns_empty_arrays_for_undetermined_list_fields(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_SPARSE_ANALYSIS)
+@pytest.mark.anyio
+async def test_returns_empty_arrays_for_undetermined_list_fields(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_SPARSE_ANALYSIS)
 
-    result = JobAnalysisAgent().analyze("We are hiring! Apply now.")
+    result = await JobAnalysisAgent().analyze("We are hiring! Apply now.")
 
     assert result["skills"] == []
     assert result["technologies"] == []
@@ -168,23 +182,25 @@ def test_returns_empty_arrays_for_undetermined_list_fields(mock_genai):
 # Input construction
 # ---------------------------------------------------------------------------
 
-def test_prepends_url_when_provided(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_prepends_url_when_provided(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
     url = "https://jobs.example.com/12345"
 
-    JobAnalysisAgent().analyze(raw_text="Job posting text", url=url)
+    await JobAnalysisAgent().analyze(raw_text="Job posting text", url=url)
 
-    contents = mock_genai.models.generate_content.call_args.kwargs["contents"]
+    contents = mock_genai.aio.models.generate_content.call_args.kwargs["contents"]
     assert contents.startswith(f"Source URL: {url}")
     assert "Job posting text" in contents
 
 
-def test_omits_url_prefix_when_not_provided(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_omits_url_prefix_when_not_provided(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    JobAnalysisAgent().analyze(raw_text="Job posting text")
+    await JobAnalysisAgent().analyze(raw_text="Job posting text")
 
-    contents = mock_genai.models.generate_content.call_args.kwargs["contents"]
+    contents = mock_genai.aio.models.generate_content.call_args.kwargs["contents"]
     assert contents == "Job posting text"
 
 
@@ -192,19 +208,21 @@ def test_omits_url_prefix_when_not_provided(mock_genai):
 # Model configuration
 # ---------------------------------------------------------------------------
 
-def test_uses_json_response_mode(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_uses_json_response_mode(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    JobAnalysisAgent().analyze("Any text")
+    await JobAnalysisAgent().analyze("Any text")
 
-    config = mock_genai.models.generate_content.call_args.kwargs["config"]
+    config = mock_genai.aio.models.generate_content.call_args.kwargs["config"]
     assert config.response_mime_type == "application/json"
 
 
-def test_uses_zero_temperature_for_determinism(mock_genai):
-    mock_genai.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
+@pytest.mark.anyio
+async def test_uses_zero_temperature_for_determinism(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_ANALYSIS)
 
-    JobAnalysisAgent().analyze("Any text")
+    await JobAnalysisAgent().analyze("Any text")
 
-    config = mock_genai.models.generate_content.call_args.kwargs["config"]
+    config = mock_genai.aio.models.generate_content.call_args.kwargs["config"]
     assert config.temperature == 0
