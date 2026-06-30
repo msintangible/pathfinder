@@ -127,7 +127,7 @@ function extractText(root) {
     for (const node of root.querySelectorAll(sel)) noise.add(node);
   }
 
-  const walker = document.createTreeWalker(
+  const walker = root.ownerDocument.createTreeWalker(
     root,
     NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
     {
@@ -176,14 +176,10 @@ function htmlToText(html) {
   // If it contains no tags it's already plain text — skip the parse.
   if (!/[<>&]/.test(html)) return normalise(html);
 
+  // Parse into a detached document and run the same block-aware extractor used
+  // for live pages — one text-extraction path, one set of block-tag rules.
   const doc = new DOMParser().parseFromString(html, "text/html");
-  // Preserve structure: turn block boundaries into newlines before reading
-  // textContent (reliable, unlike innerText on a non-rendered document).
-  for (const br of doc.body.querySelectorAll("br")) br.replaceWith("\n");
-  for (const el of doc.body.querySelectorAll("p, div, li, h1, h2, h3, h4, h5, h6, tr, section")) {
-    el.append("\n");
-  }
-  return normalise(doc.body.textContent || "");
+  return normalise(extractText(doc.body));
 }
 
 // ---------------------------------------------------------------------------
