@@ -46,6 +46,8 @@
  * @typedef {Object} UserProfile
  * @property {string|null} name
  * @property {string|null} email
+ * @property {string|null} headline
+ * @property {string|null} summary
  * @property {string[]} skills
  * @property {Experience[]} experience
  * @property {Education[]} education
@@ -61,10 +63,36 @@
  */
 
 /**
+ * Raw repository data as fetched from the GitHub API, before the agent
+ * interprets it. @see backend/schemas/profile.py's RawGitHubRepo.
+ * @typedef {Object} RawGitHubRepo
+ * @property {string} name
+ * @property {string|null} description
+ * @property {string[]} languages
+ * @property {string[]} topics
+ * @property {string|null} url
+ * @property {number|null} stars
+ */
+
+/**
+ * The raw per-source content actually fed to the agent — lets the UI show
+ * the user what was found in each source (CV, LinkedIn, GitHub, portfolio),
+ * separate from the AI-merged UserProfile.
+ * @typedef {Object} ImportSources
+ * @property {string|null} resume_text
+ * @property {string|null} linkedin_text
+ * @property {string|null} github_profile
+ * @property {RawGitHubRepo[]} github_repositories
+ * @property {string|null} portfolio_text
+ */
+
+/**
  * @typedef {Object} ImportResult
  * @property {boolean} ok
  * @property {UserProfile} [profile]
  * @property {ConfidenceMap} [confidence]
+ * @property {ImportSources} [sources]
+ * @property {string|null} [profileId] backend id of the persisted profile — needed to reference it later (e.g. resume generation)
  * @property {string} [error]
  */
 

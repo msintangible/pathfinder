@@ -6,6 +6,7 @@
     <title>Pathfinder</title>
     <link rel="stylesheet" href="sidepanel.css" />
     <link rel="stylesheet" href="profile/profile.css" />
+    <link rel="stylesheet" href="optimize/optimize.css" />
   </head>
   <body>
     <header class="header">
@@ -55,11 +56,17 @@
       <pre id="analysis-json" class="json" hidden></pre>
     </section>
 
+    <section class="card">
+      <h2 class="card__title">Optimize CV</h2>
+      <div id="optimize-root"></div>
+    </section>
+
     <footer class="footer">
       Phase 2 — auto-scrape page text.
     </footer>
 
     <script src="sidepanel.js"></script>
     <script type="module" src="profile/index.js"></script>
+    <script type="module" src="optimize/index.js"></script>
   </body>
 </html>

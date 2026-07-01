@@ -14,6 +14,8 @@ export function emptyProfile() {
   return {
     name: null,
     email: null,
+    headline: null,
+    summary: null,
     skills: [],
     experience: [],
     education: [],
@@ -90,6 +92,8 @@ export function normalizeProfile(data) {
   return {
     name: p.name ?? null,
     email: p.email ?? null,
+    headline: p.headline ?? null,
+    summary: p.summary ?? null,
     // Merge every skill bucket the rich schema might use, plus a plain `skills`.
     skills: dedupe([
       ...arr(p.skills),

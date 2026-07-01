@@ -82,6 +82,33 @@ await test("still sends github_url and portfolio_url alongside linkedin_text", a
   assert(form.get("portfolio_url") === "https://jane.dev", "portfolio_url present");
 });
 
+await test("passes the backend's sources through to the result", async () => {
+  const sources = { resume_text: "Jane Doe, Engineer", linkedin_text: null, github_profile: null, github_repositories: [], portfolio_text: null };
+  nextResponse = { status: 200, body: { profile: { name: "Jane Doe" }, sources } };
+
+  const result = await importProfile({});
+
+  assert(result.ok === true, "ok");
+  assert(result.sources?.resume_text === "Jane Doe, Engineer", "sources passed through");
+});
+
+await test("passes the backend's id through as profileId", async () => {
+  nextResponse = { status: 200, body: { id: "11111111-1111-1111-1111-111111111111", profile: { name: "Jane Doe" }, sources: {} } };
+
+  const result = await importProfile({});
+
+  assert(result.ok === true, "ok");
+  assert(result.profileId === "11111111-1111-1111-1111-111111111111", `profileId passed through: ${result.profileId}`);
+});
+
+await test("profileId is null when the backend response has no id", async () => {
+  nextResponse = { status: 200, body: { profile: { name: "Jane Doe" }, sources: {} } };
+
+  const result = await importProfile({});
+
+  assert(result.profileId === null, "profileId defaults to null");
+});
+
 await test("resolves with ok:false on HTTP error", async () => {
   nextResponse = { status: 500, body: { detail: "boom" } };
   const result = await importProfile({ linkedin: "https://linkedin.com/in/jane" });

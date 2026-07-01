@@ -7,6 +7,7 @@ empty) made Gemini fabricate an entire fictional profile instead of returning
 nulls, despite the agent's "never invent" system instruction. The endpoint
 must refuse before ever reaching the agent in that case.
 """
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -49,7 +50,10 @@ def test_proceeds_when_linkedin_text_present(client):
          patch("api.v1.profile.CandidateProfileAgent") as mock_agent_cls, \
          patch("api.v1.profile.ProfileRepository") as mock_repo_cls:
         mock_agent_cls.return_value.analyze = AsyncMock(return_value={"name": "Jane Doe"})
-        mock_repo_cls.return_value.create_from_analysis = AsyncMock(return_value=UserProfile(name="Jane Doe"))
+        test_id = uuid.uuid4()
+        mock_repo_cls.return_value.create_from_analysis = AsyncMock(
+            return_value=UserProfile(id=test_id, name="Jane Doe")
+        )
 
         resp = client.post(
             "/v1/profile/import",
@@ -58,3 +62,9 @@ def test_proceeds_when_linkedin_text_present(client):
 
         assert resp.status_code == 200
         mock_agent_cls.return_value.analyze.assert_called_once()
+
+        body = resp.json()
+        assert body["id"] == str(test_id)
+        assert body["sources"]["linkedin_text"] == "Jane Doe, Engineer"
+        assert body["sources"]["resume_text"] is None
+        assert body["sources"]["github_repositories"] == []

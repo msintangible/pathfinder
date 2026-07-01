@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.resume_generation_agent import ResumeGenerationAgent
+from services.resume_generation_agent import _SYSTEM_PROMPT, ResumeGenerationAgent
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +38,10 @@ _OPTIMIZED_RESUME = {
         }
     ],
     "projects": [],
+    "changes_summary": [
+        "Emphasized your Python and AWS experience since the job requires both.",
+        "Could not address Terraform — no matching experience was found in your profile.",
+    ],
 }
 
 _PROFILE = {
@@ -137,3 +141,8 @@ async def test_uses_json_response_mode_and_zero_temperature(mock_genai):
     config = mock_genai.aio.models.generate_content.call_args.kwargs["config"]
     assert config.response_mime_type == "application/json"
     assert config.temperature == 0
+
+
+def test_prompt_asks_for_changes_summary():
+    """Regression guard: a future prompt edit must not silently drop the field the schema expects."""
+    assert "changes_summary" in _SYSTEM_PROMPT

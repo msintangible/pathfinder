@@ -46,3 +46,21 @@ export async function analyzeJob({ raw_text, url } = {}) {
     return { ok: false, error: err?.message ?? "Network error" };
   }
 }
+
+export async function generateResume({ user_profile_id, job_id } = {}) {
+  if (!user_profile_id || !job_id) return { ok: false, error: "Missing profile or job id." };
+  try {
+    const base = await getBaseUrl();
+    const res = await fetch(`${base}/v1/resumes/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ user_profile_id, job_id }),
+    });
+    if (!res.ok) {
+      return { ok: false, error: `HTTP ${res.status}: ${await res.text()}` };
+    }
+    return { ok: true, data: await res.json() };
+  } catch (err) {
+    return { ok: false, error: err?.message ?? "Network error" };
+  }
+}

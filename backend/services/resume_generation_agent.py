@@ -20,6 +20,11 @@ Rules:
 - Never claim a missing keyword as a skill the candidate has.
 - Preserve factual accuracy: companies, titles, dates stay as given.
 - Rewrite bullets/summary to highlight relevance to the job; do not fabricate.
+- After tailoring, write 2-5 short, plain-language bullets in changes_summary
+  explaining what you emphasized or reworded and why — reference specific
+  matched_keywords you leaned into, and mention any missing_keywords you
+  could not address because the candidate has no real experience with them.
+  Write for the candidate to read, not as a raw keyword list.
 
 Schema:
 {
@@ -41,7 +46,8 @@ Schema:
       "description": string|null,
       "technologies": [string]
     }
-  ]
+  ],
+  "changes_summary": [string]
 }"""
 
 

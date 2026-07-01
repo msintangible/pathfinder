@@ -65,16 +65,16 @@ async def import_profile(
                    "Check the URLs, or provide a CV.",
         )
 
-    agent = CandidateProfileAgent()
-    analysis = await agent.analyze(
-        CandidateProfileInput(
-            resume_text=resume_text,
-            linkedin_text=linkedin_text or None,
-            github_profile=github_profile_text,
-            github_repositories=github_repos,
-            portfolio_text=portfolio_text,
-        )
+    sources = CandidateProfileInput(
+        resume_text=resume_text,
+        linkedin_text=linkedin_text or None,
+        github_profile=github_profile_text,
+        github_repositories=github_repos,
+        portfolio_text=portfolio_text,
     )
+
+    agent = CandidateProfileAgent()
+    analysis = await agent.analyze(sources)
 
     repo = ProfileRepository(session)
     profile = await repo.create_from_analysis(
@@ -85,5 +85,7 @@ async def import_profile(
     )
 
     return ProfileImportResponse(
-        profile=CandidateProfile.model_validate(profile, from_attributes=True)
+        id=profile.id,
+        profile=CandidateProfile.model_validate(profile, from_attributes=True),
+        sources=sources,
     )

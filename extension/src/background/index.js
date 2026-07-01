@@ -8,8 +8,12 @@
  * in-memory state is held here; everything durable lives in chrome.storage.
  */
 
-import { saveDetection, getDetection, removeDetection } from "./storage.js";
-import { checkHealth, analyzeJob } from "./api.js";
+import {
+  saveDetection, getDetection, removeDetection,
+  saveJobAnalysis, getJobAnalysis, removeJobAnalysis,
+  saveResumeResult, getResumeResult, removeResumeResult,
+} from "./storage.js";
+import { checkHealth, analyzeJob, generateResume } from "./api.js";
 
 // Open the side panel when the toolbar icon is clicked.
 chrome.runtime.onInstalled.addListener(() => {
@@ -42,6 +46,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       analyzeJob(message.payload).then(sendResponse);
       return true;
 
+    // The following four are sent from the side panel (not a content script),
+    // so tabId is passed explicitly in the payload — there's no sender.tab here.
+    case "SAVE_JOB_ANALYSIS":
+      saveJobAnalysis(message.payload?.tabId, message.payload).then(() => sendResponse({ ok: true }));
+      return true;
+
+    case "GET_JOB_ANALYSIS":
+      getJobAnalysis(message.payload?.tabId).then((jobAnalysis) => sendResponse({ jobAnalysis }));
+      return true;
+
+    case "SAVE_RESUME_RESULT":
+      saveResumeResult(message.payload?.tabId, message.payload?.data).then(() => sendResponse({ ok: true }));
+      return true;
+
+    case "GET_RESUME_RESULT":
+      getResumeResult(message.payload?.tabId).then((resumeResult) => sendResponse({ resumeResult }));
+      return true;
+
+    case "GENERATE_RESUME":
+      generateResume(message.payload).then(sendResponse);
+      return true;
+
     default:
       sendResponse({ ok: false, error: `Unknown type: ${message?.type}` });
       return false;
@@ -63,5 +89,9 @@ async function handlePageDetected(payload, sender) {
   }
 }
 
-// Clean up detection state when the tab closes.
-chrome.tabs.onRemoved.addListener((tabId) => removeDetection(tabId));
+// Clean up per-tab state when the tab closes.
+chrome.tabs.onRemoved.addListener((tabId) => {
+  removeDetection(tabId);
+  removeJobAnalysis(tabId);
+  removeResumeResult(tabId);
+});

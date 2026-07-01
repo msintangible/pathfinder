@@ -26,6 +26,28 @@ export async function saveProfile(profile) {
   await chrome.storage.local.set({ [StorageKey.PROFILE]: profile });
 }
 
+/** Load the raw per-source content from the last import, or null if none. */
+export async function loadSources() {
+  const stored = await chrome.storage.local.get(StorageKey.SOURCES);
+  return stored[StorageKey.SOURCES] ?? null;
+}
+
+/** Persist the raw per-source content so it can be shown again on reopen. */
+export async function saveSources(sources) {
+  await chrome.storage.local.set({ [StorageKey.SOURCES]: sources });
+}
+
+/** Load the backend id of the last imported profile, or null if none. */
+export async function loadProfileId() {
+  const stored = await chrome.storage.local.get(StorageKey.PROFILE_ID);
+  return stored[StorageKey.PROFILE_ID] ?? null;
+}
+
+/** Persist the backend id of the imported profile — needed to reference it in later calls (e.g. resume generation). */
+export async function saveProfileId(profileId) {
+  await chrome.storage.local.set({ [StorageKey.PROFILE_ID]: profileId });
+}
+
 function errorFromXhr(xhr) {
   const body = xhr.response;
   if (body && typeof body === "object") {
@@ -66,6 +88,8 @@ export async function importProfile(opts) {
           ok: true,
           profile: normalizeProfile(xhr.response),
           confidence: extractConfidence(xhr.response),
+          sources: xhr.response?.sources ?? null,
+          profileId: xhr.response?.id ?? null,
         });
       } else {
         resolve({ ok: false, error: errorFromXhr(xhr) });

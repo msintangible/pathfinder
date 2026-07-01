@@ -9,6 +9,8 @@ interview preparation) consume CandidateProfile as their primary knowledge
 source, so the output schema is intentionally comprehensive.
 """
 
+import uuid
+
 from pydantic import BaseModel, field_validator
 
 
@@ -167,4 +169,10 @@ class CandidateProfile(BaseModel):
 
 
 class ProfileImportResponse(BaseModel):
+    # The persisted UserProfile row's id — the client needs this to reference
+    # "this profile" in later calls (e.g. resume generation).
+    id: uuid.UUID
     profile: CandidateProfile
+    # The raw per-source content actually fed to the agent, so the client can
+    # show the user what was found in each source (CV, LinkedIn, GitHub, portfolio).
+    sources: CandidateProfileInput

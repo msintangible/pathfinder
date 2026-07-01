@@ -14,12 +14,15 @@ export const ImportState = Object.freeze({
 /** chrome.storage.local keys. */
 export const StorageKey = Object.freeze({
   PROFILE: "profile",
+  SOURCES: "sources",
+  PROFILE_ID: "profileId",
   BACKEND_URL: "backendUrl",
 });
 
 /** Backend routes. */
 export const Endpoint = Object.freeze({
   PROFILE_IMPORT: "/v1/profile/import",
+  RESUME_GENERATE: "/v1/resumes/generate",
 });
 
 export const DEFAULT_BACKEND_URL = "http://localhost:8003";
@@ -42,4 +45,14 @@ export const Message = Object.freeze({
   NO_BACKEND: "Backend unreachable — try again once it's running.",
   SAVED: "Profile saved.",
   REIMPORT: "Re-import from CV",
+
+  // Optimize CV
+  NO_PROFILE_HINT: "Import your profile above before optimizing a resume.",
+  PROFILE_NEEDS_REIMPORT_HINT: "Your saved profile is missing an id — click \"Re-import from CV\" above to refresh it.",
+  NO_JOB_HINT: "Analyse this job posting above before optimizing a resume.",
+  OPTIMIZE_CV: "Optimize CV",
+  REOPTIMIZE: "Re-optimize",
+  GENERATING: "Tailoring your resume…",
+  GENERATE_FAILED: "We couldn't generate a resume.",
+  OPEN_PDF: "Open PDF",
 });

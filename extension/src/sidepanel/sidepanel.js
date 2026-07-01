@@ -269,6 +269,18 @@ async function analyseJob() {
     showAnalysisStatus("Analysis complete.", false);
     analysisJsonEl.textContent = JSON.stringify(res.data, null, 2);
     analysisJsonEl.hidden = false;
+
+    // Persist the job id for this tab so the Optimize CV card can find it,
+    // and drop any resume already generated for a previous analysis of
+    // this tab so stale results don't linger under a new job.
+    await chrome.runtime.sendMessage({
+      type: "SAVE_JOB_ANALYSIS",
+      payload: { tabId: tab.id, id: res.data.id, title: res.data.title, company: res.data.company, url: scrape.url },
+    });
+    await chrome.runtime.sendMessage({
+      type: "SAVE_RESUME_RESULT",
+      payload: { tabId: tab.id, data: null },
+    });
   } else {
     showAnalysisStatus(res?.error || "Analysis failed.", true);
   }
