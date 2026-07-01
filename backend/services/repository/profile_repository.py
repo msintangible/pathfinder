@@ -12,9 +12,18 @@ class ProfileRepository:
     async def get_by_id(self, profile_id: uuid.UUID) -> UserProfile | None:
         return await self._session.get(UserProfile, profile_id)
 
-    async def create_from_analysis(self, analysis: dict) -> UserProfile:
+    async def create_from_analysis(
+        self,
+        analysis: dict,
+        linkedin_url: str | None = None,
+        github_url: str | None = None,
+        portfolio_url: str | None = None,
+    ) -> UserProfile:
         profile = UserProfile(
             name=analysis.get("name"),
+            linkedin_url=linkedin_url,
+            github_url=github_url,
+            portfolio_url=portfolio_url,
             headline=analysis.get("headline"),
             summary=analysis.get("summary"),
             technical_skills=analysis.get("technical_skills") or None,

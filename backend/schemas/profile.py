@@ -164,3 +164,7 @@ class CandidateProfile(BaseModel):
     @classmethod
     def _null_to_empty_dict(cls, value: dict | None) -> dict:
         return value if value is not None else {}
+
+
+class ProfileImportResponse(BaseModel):
+    profile: CandidateProfile

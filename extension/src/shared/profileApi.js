@@ -37,17 +37,18 @@ function errorFromXhr(xhr) {
 /**
  * POST a CV (+ optional URLs) to /v1/profile/import as multipart form data.
  *
- * @param {{ file?: File, linkedin?: string, github?: string, portfolio?: string,
- *           onProgress?: (fraction: number) => void }} opts
+ * @param {{ file?: File, linkedin?: string, linkedinText?: string, github?: string,
+ *           portfolio?: string, onProgress?: (fraction: number) => void }} opts
  * @returns {Promise<import("./types.js").ImportResult>}
  */
 export async function importProfile(opts) {
-  const { file, linkedin, github, portfolio, onProgress } = opts;
+  const { file, linkedin, linkedinText, github, portfolio, onProgress } = opts;
   const base = await getBaseUrl();
 
   const form = new FormData();
   if (file) form.append("file", file, file.name);
   if (linkedin) form.append("linkedin_url", linkedin);
+  if (linkedinText) form.append("linkedin_text", linkedinText);
   if (github) form.append("github_url", github);
   if (portfolio) form.append("portfolio_url", portfolio);
 

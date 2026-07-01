@@ -104,8 +104,8 @@ class CandidateProfileAgent:
     def __init__(self) -> None:
         self._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-    def analyze(self, input: CandidateProfileInput) -> dict:
-        response = self._client.models.generate_content(
+    async def analyze(self, input: CandidateProfileInput) -> dict:
+        response = await self._client.aio.models.generate_content(
             model="gemini-2.5-flash-lite",
             contents=self._build_content(input),
             config=types.GenerateContentConfig(

@@ -55,8 +55,8 @@
  */
 
 /**
- * Per-field extraction confidence (0..1). Keys are ProfileField values.
- * Absent key = unknown confidence (not flagged).
+ * Per-field extraction confidence (0..1), keyed by profile field name.
+ * Absent key = unknown confidence. Not currently surfaced in the UI.
  * @typedef {Record<string, number>} ConfidenceMap
  */
 

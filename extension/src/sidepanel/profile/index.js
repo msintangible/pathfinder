@@ -1,20 +1,16 @@
 /**
- * Profile controller — owns the ImportState machine and mounts the right view.
+ * Profile controller — import only, no editing UI.
  *
- *   no saved profile        → ProfileSetup (IDLE)
- *   imported, low confidence → ProfileCard  (NEEDS_REVIEW, flags shown)
- *   imported, all confident  → ProfileCard  (SUCCESS)
- *   user skipped / manual    → empty ProfileCard (MANUAL)
+ *   no saved profile → ProfileSetup (CV drag&drop + LinkedIn/GitHub/portfolio URLs)
+ *   saved profile     → a status message + "Re-import"
  *
- * The user is never blocked: from Setup they can always "enter manually", and
- * from the card they can always "re-import from CV".
+ * A successful import persists silently; the profile is never displayed or
+ * edited here, only used later by resume generation.
  */
 
-import { ImportState, Message, CONFIDENCE_LOW } from "../../shared/constants.js";
+import { ImportState, Message } from "../../shared/constants.js";
 import { loadProfile, saveProfile } from "../../shared/profileApi.js";
-import { emptyProfile } from "../../shared/profileMapper.js";
 import { createProfileSetup } from "./ProfileSetup.js";
-import { createProfileCard } from "./ProfileCard.js";
 
 const root = document.getElementById("profile-root");
 let state = ImportState.IDLE;
@@ -30,27 +26,18 @@ function showSetup() {
   state = ImportState.IDLE;
   root.innerHTML = "";
   const { element } = createProfileSetup({
-    onImported: (result) => showCard(result.profile, result.confidence, { fromImport: true }),
-    onManual: () => showCard(emptyProfile(), {}, { manual: true }),
+    onImported: (result) => {
+      saveProfile(result.profile);
+      showSaved();
+    },
   });
   root.appendChild(element);
 }
 
-function showCard(profile, confidence = {}, { fromImport = false, manual = false } = {}) {
-  const lowFields = Object.values(confidence).filter((v) => v < CONFIDENCE_LOW).length;
-  state = manual
-    ? ImportState.MANUAL
-    : lowFields > 0
-    ? ImportState.NEEDS_REVIEW
-    : ImportState.SUCCESS;
-
+function showSaved() {
+  state = ImportState.SUCCESS;
   root.innerHTML = "";
-  if (state === ImportState.NEEDS_REVIEW) root.appendChild(banner(Message.NEEDS_REVIEW, "warn"));
-  else if (fromImport) root.appendChild(banner(Message.SAVED, "ok"));
-
-  const card = createProfileCard({ profile, confidence, onChange: saveProfile });
-  root.appendChild(card.element);
-  saveProfile(profile); // persist the starting point immediately
+  root.appendChild(banner(Message.SAVED, "ok"));
 
   const reimport = document.createElement("button");
   reimport.className = "btn-link";
@@ -62,6 +49,6 @@ function showCard(profile, confidence = {}, { fromImport = false, manual = false
 (async function init() {
   if (!root) return;
   const saved = await loadProfile();
-  if (saved) showCard(saved);
+  if (saved) showSaved();
   else showSetup();
 })();
