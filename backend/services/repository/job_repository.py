@@ -1,4 +1,5 @@
 import hashlib
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,9 @@ class JobRepository:
             select(Job).where(Job.posting_text_hash == text_hash)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, job_id: uuid.UUID) -> Job | None:
+        return await self._session.get(Job, job_id)
 
     async def create_from_analysis(
         self,

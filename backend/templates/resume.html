@@ -1,0 +1,53 @@
+<html>
+<head>
+<style>
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #1a1a1a; }
+    h1 { font-size: 18pt; margin-bottom: 2pt; }
+    h2 { font-size: 12pt; margin-top: 14pt; margin-bottom: 4pt; border-bottom: 1px solid #999; }
+    .summary { margin-bottom: 10pt; }
+    .skills { margin-bottom: 4pt; }
+    .entry { margin-bottom: 8pt; }
+    .entry-title { font-weight: bold; }
+    .entry-meta { font-style: italic; color: #444; }
+    ul { margin: 2pt 0; padding-left: 14pt; }
+</style>
+</head>
+<body>
+    {% if headline %}<h1>{{ headline }}</h1>{% endif %}
+
+    {% if summary %}<p class="summary">{{ summary }}</p>{% endif %}
+
+    {% if skills %}
+    <h2>Skills</h2>
+    <p class="skills">{{ skills | join(", ") }}</p>
+    {% endif %}
+
+    {% if experience %}
+    <h2>Experience</h2>
+    {% for entry in experience %}
+    <div class="entry">
+        <div class="entry-title">{{ entry.title or "" }}{% if entry.company %} — {{ entry.company }}{% endif %}</div>
+        {% if entry.start_date or entry.end_date %}
+        <div class="entry-meta">{{ entry.start_date or "" }} – {{ entry.end_date or "" }}</div>
+        {% endif %}
+        {% if entry.bullets %}
+        <ul>
+            {% for bullet in entry.bullets %}<li>{{ bullet }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if projects %}
+    <h2>Projects</h2>
+    {% for project in projects %}
+    <div class="entry">
+        <div class="entry-title">{{ project.name or "" }}</div>
+        {% if project.description %}<div>{{ project.description }}</div>{% endif %}
+        {% if project.technologies %}<div class="entry-meta">{{ project.technologies | join(", ") }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+</body>
+</html>

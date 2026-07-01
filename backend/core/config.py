@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     s3_bucket: str = "pathfinder-documents"
     s3_region: str = "us-east-1"
 
+    # Local resume PDF storage — placeholder until S3 upload is wired up
+    resume_storage_path: str = "./storage/resumes"
+
     # Rate limits (requests per minute)
     rate_limit_default: int = 60
     rate_limit_generation: int = 10

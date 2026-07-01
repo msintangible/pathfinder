@@ -9,7 +9,7 @@ interview preparation) consume CandidateProfile as their primary knowledge
 source, so the output schema is intentionally comprehensive.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -144,3 +144,23 @@ class CandidateProfile(BaseModel):
 
     # Links — e.g. {"linkedin": "...", "github": "...", "portfolio": "..."}
     links: dict[str, str] = {}
+
+    # UserProfile stores "no data" as SQL NULL for these fields (see ProfileRepository),
+    # so validating straight from the ORM row via from_attributes=True must accept None.
+    @field_validator(
+        "technical_skills", "soft_skills", "programming_languages", "frameworks",
+        "libraries", "databases", "cloud_platforms", "devops_tools", "ai_ml_tools",
+        "development_tools", "work_experience", "education", "projects",
+        "github_repositories", "open_source_contributions", "certifications",
+        "awards", "achievements", "leadership_experience", "volunteer_work",
+        "publications",
+        mode="before",
+    )
+    @classmethod
+    def _null_to_empty_list(cls, value: list | None) -> list:
+        return value if value is not None else []
+
+    @field_validator("links", mode="before")
+    @classmethod
+    def _null_to_empty_dict(cls, value: dict | None) -> dict:
+        return value if value is not None else {}
