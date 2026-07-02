@@ -147,7 +147,7 @@ See `backend/docs/models.md` — Phase 2 section for full field reference.
 }
 ```
 
-**PDF:** Rendered asynchronously once the `ResumeVersion` is approved. URL stored in `rendered_pdf_url`.
+**Rendering:** A docx-sourced profile gets its original file edited in place (preserving layout); otherwise a generic PDF template is rendered. URL/format stored in `rendered_file_url`/`rendered_file_format`.
 
 **Immutability:** Each optimisation run inserts a new row. Existing rows are never updated.
 

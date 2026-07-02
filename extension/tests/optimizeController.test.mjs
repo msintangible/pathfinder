@@ -129,7 +129,7 @@ await test("both present, no prior result: button enabled, labeled Optimize CV",
   assert(btn.textContent === Message.OPTIMIZE_CV, "button label");
 });
 
-await test("generate success: renders ATS score, keywords, changes, and Open PDF", async () => {
+await test("generate success: renders ATS score, keywords, changes, and Open Resume", async () => {
   const generateResult = {
     ok: true,
     data: {
@@ -164,9 +164,9 @@ await test("generate success: renders ATS score, keywords, changes, and Open PDF
   const btn = root.querySelector("#optimize-cv");
   assert(btn.disabled === false && btn.textContent === Message.REOPTIMIZE, "button relabeled Re-optimize");
 
-  const openPdfBtn = Array.from(root.querySelectorAll("button")).find((b) => b.textContent === Message.OPEN_PDF);
-  assert(openPdfBtn, "Open PDF button present");
-  openPdfBtn.click();
+  const openResumeBtn = Array.from(root.querySelectorAll("button")).find((b) => b.textContent === Message.OPEN_RESUME);
+  assert(openResumeBtn, "Open Resume button present");
+  openResumeBtn.click();
   await flush();
   assert(tabsCreated[0]?.url === "http://localhost:8003/v1/resumes/abc/download", `opened URL: ${tabsCreated[0]?.url}`);
 });

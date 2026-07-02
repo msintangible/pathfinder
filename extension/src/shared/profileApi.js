@@ -8,6 +8,7 @@
 
 import { StorageKey, DEFAULT_BACKEND_URL, Endpoint } from "./constants.js";
 import { normalizeProfile, extractConfidence } from "./profileMapper.js";
+import { getAuthToken, clearAuthToken } from "./auth.js";
 
 /** Resolve the configured backend base URL (no trailing slash). */
 export async function getBaseUrl() {
@@ -67,6 +68,13 @@ export async function importProfile(opts) {
   const { file, linkedin, linkedinText, github, portfolio, onProgress } = opts;
   const base = await getBaseUrl();
 
+  let token;
+  try {
+    token = await getAuthToken(base);
+  } catch (err) {
+    return { ok: false, error: err?.message ?? "Could not authenticate — is the backend running?" };
+  }
+
   const form = new FormData();
   if (file) form.append("file", file, file.name);
   if (linkedin) form.append("linkedin_url", linkedin);
@@ -78,6 +86,7 @@ export async function importProfile(opts) {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${base}${Endpoint.PROFILE_IMPORT}`);
     xhr.responseType = "json";
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
@@ -92,6 +101,7 @@ export async function importProfile(opts) {
           profileId: xhr.response?.id ?? null,
         });
       } else {
+        if (xhr.status === 401) clearAuthToken();
         resolve({ ok: false, error: errorFromXhr(xhr) });
       }
     };

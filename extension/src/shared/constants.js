@@ -17,28 +17,35 @@ export const StorageKey = Object.freeze({
   SOURCES: "sources",
   PROFILE_ID: "profileId",
   BACKEND_URL: "backendUrl",
+  AUTH_TOKEN: "authToken",
 });
 
 /** Backend routes. */
 export const Endpoint = Object.freeze({
+  AUTH_ANONYMOUS: "/v1/auth/anonymous",
   PROFILE_IMPORT: "/v1/profile/import",
   RESUME_GENERATE: "/v1/resumes/generate",
 });
 
 export const DEFAULT_BACKEND_URL = "http://localhost:8003";
 
-/** CV upload constraints. */
+/** CV upload constraints. DOCX (not just PDF) is accepted so resume generation
+ *  can edit the candidate's original file in place instead of rendering a
+ *  generic template — see backend/services/docx_resume_renderer.py. */
 export const Upload = Object.freeze({
   MAX_BYTES: 10 * 1024 * 1024,
   MAX_LABEL: "10MB",
-  ACCEPTED_MIME: "application/pdf",
-  ACCEPTED_EXT: ".pdf",
+  ACCEPTED_MIME: Object.freeze([
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]),
+  ACCEPTED_EXT: ".pdf,.docx",
 });
 
 /** User-facing copy, centralised so wording stays consistent. */
 export const Message = Object.freeze({
   DROP_HINT: "Drag & drop your CV here, or click to browse",
-  PDF_ONLY: "Only PDF files are supported.",
+  UNSUPPORTED_FILE_TYPE: "Only PDF or DOCX files are supported.",
   TOO_LARGE: `That file is larger than ${"10MB"}.`,
   UPLOADING: "Reading your CV and building your profile…",
   IMPORT_FAILED: "We couldn't import your profile.",
@@ -54,5 +61,5 @@ export const Message = Object.freeze({
   REOPTIMIZE: "Re-optimize",
   GENERATING: "Tailoring your resume…",
   GENERATE_FAILED: "We couldn't generate a resume.",
-  OPEN_PDF: "Open PDF",
+  OPEN_RESUME: "Open Resume",
 });

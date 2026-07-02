@@ -25,7 +25,9 @@ class ResumeVersion(Base, PrimaryKeyMixin):
             "projects": [{ "name", "description", "tech" }]
         }
 
-    rendered_pdf_url is populated by the render worker after PDF generation.
+    rendered_file_url/rendered_file_format are populated by the render worker
+    after generation — format is "pdf" (generic template) or "docx" (the
+    candidate's original file, edited in place).
     """
     __tablename__ = "resume_versions"
 
@@ -46,8 +48,12 @@ class ResumeVersion(Base, PrimaryKeyMixin):
     # ATS keyword match score (0–100), set by ATS Optimisation Agent
     ats_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
 
-    # S3 URL set by the render worker once the PDF is ready
-    rendered_pdf_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set by the render worker once the file is ready. format is "pdf" (built
+    # from templates/resume.html) or "docx" (the candidate's original file,
+    # edited in place — see docx_resume_renderer.py) so the download endpoint
+    # knows which media type/extension to serve.
+    rendered_file_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rendered_file_format: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

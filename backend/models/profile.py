@@ -1,7 +1,8 @@
+import uuid
 from datetime import datetime
 
-from sqlalchemy import Text, DateTime, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Text, DateTime, ForeignKey, func
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, PrimaryKeyMixin
@@ -13,8 +14,8 @@ class UserProfile(Base, PrimaryKeyMixin):
 
     Single record representing everything we know about the candidate, built by
     ingesting their resume PDF, LinkedIn, GitHub, and optional portfolio URL.
-    No upsert key exists yet (no User FK until auth is introduced), so each
-    ingestion currently inserts a new row.
+    No upsert key exists on user_id yet, so each ingestion currently inserts
+    a new row rather than updating the caller's existing profile.
 
     Extracted-data columns mirror schemas.profile.CandidateProfile exactly —
     the output of CandidateProfileAgent — the same way Job mirrors the Job
@@ -27,12 +28,24 @@ class UserProfile(Base, PrimaryKeyMixin):
     """
     __tablename__ = "user_profiles"
 
-    # --- Identity (no User FK until auth is introduced) ---
+    # Owner — every profile is scoped to the anonymous/registered user who
+    # created it; this is what makes resume generation/download ownership
+    # checks possible.
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+
+    # --- Identity ---
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- Ingestion sources ---
-    resume_pdf_url: Mapped[str | None] = mapped_column(Text, nullable=True)   # S3 URL of uploaded PDF
+    # The originally uploaded CV file, stored so resume generation can edit it
+    # in place (preserving its real layout) instead of rendering a generic
+    # template. Only set for formats we can edit in place (currently docx —
+    # see docx_resume_renderer.py); null for pdf-sourced profiles for now.
+    source_document_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_document_format: Mapped[str | None] = mapped_column(Text, nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     github_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     portfolio_url: Mapped[str | None] = mapped_column(Text, nullable=True)

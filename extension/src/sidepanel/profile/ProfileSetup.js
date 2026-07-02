@@ -1,5 +1,5 @@
 /**
- * ProfileSetup — onboarding UI: CV drag&drop (PDF only, 10MB) + optional URLs.
+ * ProfileSetup — onboarding UI: CV drag&drop (PDF or DOCX, 10MB) + optional URLs.
  *
  * Emits onImported(result) on success. "Import profile" enables as soon as
  * there's anything to import from — a CV, a URL, or scraped LinkedIn text —
@@ -11,8 +11,10 @@ import { Upload, Message } from "../../shared/constants.js";
 
 /** @returns {string|null} an error message, or null if the file is valid. */
 function validateFile(file) {
-  const isPdf = file.type === Upload.ACCEPTED_MIME || file.name.toLowerCase().endsWith(".pdf");
-  if (!isPdf) return Message.PDF_ONLY;
+  const name = file.name.toLowerCase();
+  const isAccepted = Upload.ACCEPTED_MIME.includes(file.type)
+    || name.endsWith(".pdf") || name.endsWith(".docx");
+  if (!isAccepted) return Message.UNSUPPORTED_FILE_TYPE;
   if (file.size > Upload.MAX_BYTES) return Message.TOO_LARGE;
   return null;
 }

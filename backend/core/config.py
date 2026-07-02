@@ -14,6 +14,12 @@ class Settings(BaseSettings):
 
     # Database — ssl=disable required for local Docker postgres (no SSL configured)
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/pathfinder?ssl=disable"
+    # Unused by the app itself — docker-compose reads these from the same
+    # .env to configure the Postgres container. Declared here only so
+    # Settings (extra="forbid" by default) doesn't reject them.
+    postgres_user: str = "postgres"
+    postgres_password: str = "postgres"
+    postgres_db: str = "pathfinder"
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
@@ -22,6 +28,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 30
+    # Anonymous identity tokens (no login flow exists yet, so no session to
+    # refresh) get their own, much longer expiry than a future login session.
+    jwt_anonymous_token_expire_days: int = 365
 
     # CORS
     cors_origins: list[str] = ["http://localhost:3000"]

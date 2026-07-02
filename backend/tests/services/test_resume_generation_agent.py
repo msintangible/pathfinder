@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services.llm_output import LLMOutputError
 from services.resume_generation_agent import _SYSTEM_PROMPT, ResumeGenerationAgent
 
 
@@ -146,3 +147,29 @@ async def test_uses_json_response_mode_and_zero_temperature(mock_genai):
 def test_prompt_asks_for_changes_summary():
     """Regression guard: a future prompt edit must not silently drop the field the schema expects."""
     assert "changes_summary" in _SYSTEM_PROMPT
+
+
+def test_prompt_forbids_changing_experience_entry_count_and_order():
+    """Regression guard: a future prompt edit must not silently drop the structural-preservation rules."""
+    assert "same order" in _SYSTEM_PROMPT
+    assert "never change a title, company, start_date, or end_date" in _SYSTEM_PROMPT.lower()
+
+
+# ---------------------------------------------------------------------------
+# Invalid LLM output
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_raises_llm_output_error_on_invalid_json(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = MagicMock(text="not json")
+
+    with pytest.raises(LLMOutputError):
+        await ResumeGenerationAgent().generate(_PROFILE, _JOB)
+
+
+@pytest.mark.anyio
+async def test_raises_llm_output_error_on_wrong_shaped_json(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response({"skills": "not-a-list"})
+
+    with pytest.raises(LLMOutputError):
+        await ResumeGenerationAgent().generate(_PROFILE, _JOB)

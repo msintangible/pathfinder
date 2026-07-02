@@ -1,10 +1,12 @@
-import json
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+from schemas.jobs import JobAnalysis
+from services.llm_output import parse_llm_json
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -62,4 +64,4 @@ class JobAnalysisAgent:
                 temperature=0,
             ),
         )
-        return json.loads(response.text)
+        return parse_llm_json(response.text, JobAnalysis)
