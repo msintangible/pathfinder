@@ -8,6 +8,8 @@
  * service worker bypasses CORS for that origin (MV3 behaviour).
  */
 
+import { getAuthToken, clearAuthToken } from "../shared/auth.js";
+
 const DEFAULT_BASE_URL = "http://localhost:8003";
 
 // A hung backend (or a bad backendUrl pointing nowhere) must not hang the
@@ -58,12 +60,18 @@ export async function analyzeJob({ raw_text, url } = {}) {
   if (!raw_text) return { ok: false, error: "No page text to analyse." };
   try {
     const base = await getBaseUrl();
+    const token = await getAuthToken(base);
     const res = await fetchWithTimeout(`${base}/v1/jobs/analyze`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({ raw_text, url: url ?? null }),
     });
     if (!res.ok) {
+      if (res.status === 401) await clearAuthToken();
       return { ok: false, error: `HTTP ${res.status}: ${await res.text()}` };
     }
     return { ok: true, data: await res.json() };
@@ -76,12 +84,18 @@ export async function generateResume({ user_profile_id, job_id } = {}) {
   if (!user_profile_id || !job_id) return { ok: false, error: "Missing profile or job id." };
   try {
     const base = await getBaseUrl();
+    const token = await getAuthToken(base);
     const res = await fetchWithTimeout(`${base}/v1/resumes/generate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({ user_profile_id, job_id }),
     });
     if (!res.ok) {
+      if (res.status === 401) await clearAuthToken();
       return { ok: false, error: `HTTP ${res.status}: ${await res.text()}` };
     }
     return { ok: true, data: await res.json() };

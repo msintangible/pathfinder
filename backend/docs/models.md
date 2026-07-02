@@ -64,7 +64,7 @@ its existence by serving the current phase. Nothing is built ahead of need.
 ```
 
 **Key fields:**
-- `resume_pdf_url`, `linkedin_url`, `github_url`, `portfolio_url` — ingestion sources
+- `source_document_path`/`source_document_format`, `linkedin_url`, `github_url`, `portfolio_url` — ingestion sources
 - `skills`, `experience`, `education`, `projects` — JSONB arrays populated by the ingestion agents
 - `links` — JSONB dict of all candidate URLs
 - `name`, `email` — identity fields (no User FK until auth is introduced)
@@ -101,7 +101,7 @@ everything passes through the AI, so flat JSONB is sufficient and far simpler.
 - `job_id` → FK to `Job`
 - `content` — JSONB structured resume produced by the CV Optimisation Agent
 - `ats_score` — keyword match score (0–100) set by ATS Optimisation Agent
-- `rendered_pdf_url` — S3 URL populated by the render worker once the PDF is ready
+- `rendered_file_url`/`rendered_file_format` — populated by the render worker once the resume is ready (`"pdf"` from the generic template, or `"docx"` — the candidate's original file edited in place)
 
 **Immutability:** Each optimisation run inserts a new row. Existing rows are never
 updated. This means the full generation history is preserved for every profile/job pair.

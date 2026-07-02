@@ -20,7 +20,8 @@ class ResumeRepository:
         matched_keywords: list[str],
         missing_keywords: list[str],
         ats_score: float,
-        rendered_pdf_url: str | None = None,
+        rendered_file_url: str | None = None,
+        rendered_file_format: str | None = None,
     ) -> ResumeVersion:
         resume = ResumeVersion(
             user_profile_id=user_profile_id,
@@ -29,7 +30,8 @@ class ResumeRepository:
             matched_keywords=matched_keywords or None,
             missing_keywords=missing_keywords or None,
             ats_score=ats_score,
-            rendered_pdf_url=rendered_pdf_url,
+            rendered_file_url=rendered_file_url,
+            rendered_file_format=rendered_file_format,
         )
         self._session.add(resume)
         await self._session.commit()

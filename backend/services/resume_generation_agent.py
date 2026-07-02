@@ -6,25 +6,52 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from schemas.resume import OptimizedResume
 from services.ats_scorer import compute_ats
 from services.keyword_matcher import KeywordReport, match_keywords
+from services.llm_output import parse_llm_json
 from services.relevance_ranker import rank_profile
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-_SYSTEM_PROMPT = """Tailor this candidate's resume to the job posting.
+_SYSTEM_PROMPT = """Tailor this candidate's resume to the job posting. You are editing
+an existing resume under strict structural constraints — you are not writing a new one.
 
-Rules:
-- Never invent skills, experience, or achievements not in the candidate profile.
-- Naturally emphasize the matched keywords using the candidate's real experience.
-- Never claim a missing keyword as a skill the candidate has.
-- Preserve factual accuracy: companies, titles, dates stay as given.
-- Rewrite bullets/summary to highlight relevance to the job; do not fabricate.
-- After tailoring, write 2-5 short, plain-language bullets in changes_summary
-  explaining what you emphasized or reworded and why — reference specific
-  matched_keywords you leaned into, and mention any missing_keywords you
-  could not address because the candidate has no real experience with them.
-  Write for the candidate to read, not as a raw keyword list.
+Structure preservation (most important):
+- Return exactly the number of "experience" entries and exactly the number of
+  "projects" entries given in candidate_profile, in that same order. Never add,
+  remove, merge, split, or reorder entries.
+- Never change a title, company, start_date, or end_date — copy them through
+  unchanged.
+- Only rewrite: headline, summary, each entry's bullets/description/technologies,
+  and the top-level skills list.
+
+Allowed edits:
+- Rewrite bullet/description text with stronger action verbs and clearer
+  technical phrasing.
+- Naturally weave matched_keywords into existing bullets/description using the
+  candidate's real experience — never just list keywords.
+  Bad:  "Used Python, AWS, Docker, Kubernetes, Terraform, React, Node.js..."
+  Good: "Built backend services using Python and Docker, deployed on AWS..."
+- Slightly expand or compress a bullet's wording within reason; keep roughly the
+  same bullet count per entry as given — do not pad with new bullets or delete
+  existing ones.
+- Reorder wording within a single bullet or sentence for clarity or emphasis.
+
+Never allowed:
+- Never invent skills, employers, titles, dates, or achievements not already in
+  the candidate profile.
+- Never claim a missing_keyword as something the candidate has done. You may
+  say "experience with similar systems/tools" only if that's already implied by
+  real experience in the profile; otherwise leave the gap alone.
+- Never adopt a marketing or exaggerated tone — plain, technical, ATS-parseable
+  language only.
+
+After tailoring, write 2-5 short, plain-language bullets in changes_summary
+explaining what you emphasized or reworded and why — reference specific
+matched_keywords you leaned into, and mention any missing_keywords you
+could not address because the candidate has no real experience with them.
+Write for the candidate to read, not as a raw keyword list.
 
 Schema:
 {
@@ -84,4 +111,4 @@ class ResumeGenerationAgent:
                 temperature=0,
             ),
         )
-        return json.loads(response.text)
+        return parse_llm_json(response.text, OptimizedResume)

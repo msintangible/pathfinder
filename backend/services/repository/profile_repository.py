@@ -15,15 +15,21 @@ class ProfileRepository:
     async def create_from_analysis(
         self,
         analysis: dict,
+        user_id: uuid.UUID,
         linkedin_url: str | None = None,
         github_url: str | None = None,
         portfolio_url: str | None = None,
+        source_document_path: str | None = None,
+        source_document_format: str | None = None,
     ) -> UserProfile:
         profile = UserProfile(
+            user_id=user_id,
             name=analysis.get("name"),
             linkedin_url=linkedin_url,
             github_url=github_url,
             portfolio_url=portfolio_url,
+            source_document_path=source_document_path,
+            source_document_format=source_document_format,
             headline=analysis.get("headline"),
             summary=analysis.get("summary"),
             technical_skills=analysis.get("technical_skills") or None,

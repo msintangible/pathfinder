@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.job_analysis_agent import JobAnalysisAgent
+from services.llm_output import LLMOutputError
 
 
 # ---------------------------------------------------------------------------
@@ -225,3 +226,23 @@ async def test_uses_zero_temperature_for_determinism(mock_genai):
 
     config = mock_genai.aio.models.generate_content.call_args.kwargs["config"]
     assert config.temperature == 0
+
+
+# ---------------------------------------------------------------------------
+# Invalid LLM output
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_raises_llm_output_error_on_invalid_json(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = MagicMock(text="not json")
+
+    with pytest.raises(LLMOutputError):
+        await JobAnalysisAgent().analyze("Any text")
+
+
+@pytest.mark.anyio
+async def test_raises_llm_output_error_on_wrong_shaped_json(mock_genai):
+    mock_genai.aio.models.generate_content.return_value = _make_response({"skills": "not-a-list"})
+
+    with pytest.raises(LLMOutputError):
+        await JobAnalysisAgent().analyze("Any text")

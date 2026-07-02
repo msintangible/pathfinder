@@ -77,5 +77,38 @@ await test("no manual-entry escape hatch remains", () => {
   assert(el.querySelector('[data-role="manual"]') === null, "manual button should not exist");
 });
 
+function dropFile(el, file) {
+  const drop = el.querySelector(".pf-drop");
+  drop.dispatchEvent(Object.assign(new dom.window.Event("drop"), { dataTransfer: { files: [file] } }));
+}
+
+await test("dropping a .docx CV is accepted", () => {
+  const el = setup();
+  const importBtn = el.querySelector('[data-role="import"]');
+  const status = el.querySelector('[data-role="status"]');
+
+  dropFile(el, {
+    name: "resume.docx",
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 1024,
+  });
+
+  assert(status.hidden === true, "no error status shown");
+  assert(importBtn.disabled === false, "import enabled after a valid docx drop");
+  assert(el.querySelector(".pf-drop__label").textContent === "resume.docx", "label shows the filename");
+});
+
+await test("dropping an unsupported file type is rejected", () => {
+  const el = setup();
+  const importBtn = el.querySelector('[data-role="import"]');
+  const status = el.querySelector('[data-role="status"]');
+
+  dropFile(el, { name: "resume.txt", type: "text/plain", size: 1024 });
+
+  assert(status.hidden === false, "error status shown");
+  assert(status.textContent === "Only PDF or DOCX files are supported.", `status text: ${status.textContent}`);
+  assert(importBtn.disabled === true, "import stays disabled with no other source");
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

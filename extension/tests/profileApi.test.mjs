@@ -13,21 +13,39 @@ async function test(name, fn) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
-// --- Mock chrome.storage.local (no stored backend URL -> default is used) ---
+// --- Mock chrome.storage.local: no stored backend URL -> default is used;
+// a cached auth token means getAuthToken() never needs to call fetch(). ---
+let storedLocal = {};
 global.chrome = {
-  storage: { local: { get: async () => ({}) } },
+  storage: {
+    local: {
+      get: async (key) => (key in storedLocal ? { [key]: storedLocal[key] } : {}),
+      set: async (values) => Object.assign(storedLocal, values),
+      remove: async (key) => { delete storedLocal[key]; },
+    },
+  },
 };
 
-// --- Mock XMLHttpRequest: captures the sent FormData, resolves with a canned response ---
+// --- Mock fetch: only used by getAuthToken() to mint an anonymous token ---
+global.fetch = async () => ({
+  ok: true,
+  json: async () => ({ access_token: "test-token" }),
+});
+
+// --- Mock XMLHttpRequest: captures the sent FormData/headers, resolves with a canned response ---
 let nextResponse = { status: 200, body: {} };
 class FakeXHR {
   constructor() {
     this.upload = {};
     this.responseType = "";
+    this.headers = {};
   }
   open(method, url) {
     this.method = method;
     this.url = url;
+  }
+  setRequestHeader(name, value) {
+    this.headers[name] = value;
   }
   send(body) {
     this.sentBody = body;
@@ -115,6 +133,20 @@ await test("resolves with ok:false on HTTP error", async () => {
 
   assert(result.ok === false, "not ok");
   assert(result.error === "boom", `error message: ${result.error}`);
+});
+
+await test("attaches the cached auth token as a Bearer header", async () => {
+  nextResponse = { status: 200, body: {} };
+  await importProfile({ linkedin: "https://linkedin.com/in/jane" });
+
+  assert(FakeXHR.lastInstance.headers.Authorization === "Bearer test-token", "Authorization header present");
+});
+
+await test("clears the cached token on a 401 so the next call mints a fresh one", async () => {
+  nextResponse = { status: 401, body: { detail: "Invalid or expired token" } };
+  await importProfile({ linkedin: "https://linkedin.com/in/jane" });
+
+  assert(storedLocal.authToken === undefined, "cached token cleared after 401");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

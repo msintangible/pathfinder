@@ -73,7 +73,7 @@ function keywordSection(label, keywords, variant) {
 }
 
 /** Open the generated resume's PDF in a new browser tab. */
-async function openPdf(downloadUrl) {
+async function openResume(downloadUrl) {
   const base = await getBaseUrl();
   chrome.tabs.create({ url: `${base}${downloadUrl}` });
 }
@@ -111,11 +111,11 @@ function renderResult(container, result) {
     container.appendChild(ul);
   }
 
-  const openPdfBtn = document.createElement("button");
-  openPdfBtn.className = "btn btn--secondary";
-  openPdfBtn.textContent = Message.OPEN_PDF;
-  openPdfBtn.addEventListener("click", () => openPdf(result.download_url));
-  container.appendChild(openPdfBtn);
+  const openResumeBtn = document.createElement("button");
+  openResumeBtn.className = "btn btn--secondary";
+  openResumeBtn.textContent = Message.OPEN_RESUME;
+  openResumeBtn.addEventListener("click", () => openResume(result.download_url));
+  container.appendChild(openResumeBtn);
 }
 
 /** Re-render #optimize-root from the current state. Pure function of `state`. */

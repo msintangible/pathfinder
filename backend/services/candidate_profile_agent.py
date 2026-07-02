@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 
@@ -6,7 +5,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from schemas.profile import CandidateProfileInput
+from schemas.profile import CandidateProfile, CandidateProfileInput
+from services.llm_output import parse_llm_json
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -114,7 +114,7 @@ class CandidateProfileAgent:
                 temperature=0,
             ),
         )
-        return json.loads(response.text)
+        return parse_llm_json(response.text, CandidateProfile)
 
     def _build_content(self, input: CandidateProfileInput) -> str:
         """
