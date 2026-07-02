@@ -25,11 +25,13 @@
     {
       "matches": ["<all_urls>"],
       "js": [
+        "src/content/jsonld.js",
         "src/content/detect.js",
         "src/content/scrape.js",
         "src/content/index.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ]
 }

@@ -78,11 +78,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // Handlers
 // ---------------------------------------------------------------------------
 
-async function handlePageDetected(payload, sender) {
+/**
+ * With all_frames: true, an iframe-embedded ATS (Lever, some Workday embeds)
+ * reports its own detection independently from the surrounding top-level
+ * page, and either can arrive first. Keep whichever has the higher
+ * confidence for the CURRENT page load.
+ *
+ * "Current page load" is tracked via sender.tab.url, which reflects the
+ * tab's top-level URL regardless of which frame sent the message — a real
+ * navigation changes it (so a stale high-confidence score from a previous
+ * page can't linger and leave the "JOB" badge stuck), while sibling frames
+ * on the same load share it (so they merge instead of clobbering each other).
+ *
+ * Best-effort, not strictly race-free: two frames' messages arriving in the
+ * same microtask window could both read storage before either writes. Low
+ * severity (self-corrects on the next GET_DETECTION read) and not worth a
+ * lock for how rarely more than one or two frames report per tab.
+ */
+export async function handlePageDetected(payload, sender) {
   const tabId = sender?.tab?.id;
   if (tabId == null) return;
-  await saveDetection(tabId, payload);
-  const isJobPage = Boolean(payload?.isJobPage);
+
+  const pageUrl = sender?.tab?.url ?? null;
+  const existing = await getDetection(tabId);
+  const isNewPage = !existing || existing._pageUrl !== pageUrl;
+  const shouldReplace = isNewPage || payload?.confidence > existing.confidence;
+
+  const winner = shouldReplace ? { ...payload, _pageUrl: pageUrl } : existing;
+  if (shouldReplace) await saveDetection(tabId, winner);
+
+  const isJobPage = Boolean(winner?.isJobPage);
   await chrome.action.setBadgeText({ tabId, text: isJobPage ? "JOB" : "" });
   if (isJobPage) {
     await chrome.action.setBadgeBackgroundColor({ tabId, color: "#2563eb" });

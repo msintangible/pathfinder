@@ -20,7 +20,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SRC = fs.readFileSync(path.join(__dirname, "../src/content/scrape.js"), "utf8");
+// scrape.js calls collectJsonLdNodesByType(), declared in jsonld.js, which
+// manifest.json loads first into the same content-script global scope —
+// concatenate the two here to mirror that load order.
+const JSONLD_SRC = fs.readFileSync(path.join(__dirname, "../src/content/jsonld.js"), "utf8");
+const SRC = JSONLD_SRC + "\n" + fs.readFileSync(path.join(__dirname, "../src/content/scrape.js"), "utf8");
 
 /** Load scrape.js against an HTML fixture and return scrapePage(). */
 function makeScraper(html, url = "https://example.com/job/123") {
@@ -161,15 +165,44 @@ test("Truncation: caps text and reports full length", () => {
 // ---------------------------------------------------------------------------
 // 6. Always returns the stable contract
 // ---------------------------------------------------------------------------
-test("Contract: returns url/title/scrapedAt/source/length/truncated/text", () => {
+test("Contract: returns url/title/scrapedAt/source/length/truncated/lowConfidence/text", () => {
   const scrape = makeScraper(`<!doctype html><html><head><title>T</title></head>
     <body><p>tiny</p></body></html>`, "https://acme.com/careers/1");
   const r = scrape();
-  for (const key of ["url", "title", "scrapedAt", "source", "length", "truncated", "text"]) {
+  for (const key of ["url", "title", "scrapedAt", "source", "length", "truncated", "lowConfidence", "text"]) {
     assert(key in r, `missing key: ${key}`);
   }
   assert(r.url === "https://acme.com/careers/1", `url: ${r.url}`);
   assert(typeof r.text === "string", "text is string");
+});
+
+// ---------------------------------------------------------------------------
+// 7. Quality floor — lowConfidence flag
+// ---------------------------------------------------------------------------
+test("lowConfidence: true for short body-fallback text (nav junk shape)", () => {
+  const scrape = makeScraper(`<!doctype html><html><head><title>x</title></head>
+    <body><p>Hi there.</p></body></html>`);
+  const r = scrape();
+  assert(r.source === "body", `source: ${r.source}`);
+  assert(r.lowConfidence === true, "short text should be flagged low confidence");
+});
+
+test("lowConfidence: true for long text with no job-shaped keyword overlap", () => {
+  const filler = "The quick brown fox jumps over the lazy dog in the meadow. ".repeat(10);
+  const scrape = makeScraper(`<!doctype html><html><head><title>x</title></head>
+    <body><article><p>${filler}</p></article></body></html>`);
+  const r = scrape();
+  assert(r.length >= 150, `expected length over the floor, got ${r.length}`);
+  assert(r.lowConfidence === true, "keyword-free long text should still be flagged");
+});
+
+test("lowConfidence: false for a real job-shaped extraction", () => {
+  const body = "We are looking for a backend engineer with 5+ years of experience. ".repeat(10) +
+    "Responsibilities include owning the payments pipeline. Remote and hybrid welcome. Full-time role with great benefits.";
+  const scrape = makeScraper(`<!doctype html><html><head><title>Job</title></head>
+    <body><main class="job-description"><p>${body}</p></main></body></html>`);
+  const r = scrape();
+  assert(r.lowConfidence === false, `expected false, length=${r.length}`);
 });
 
 // ---------------------------------------------------------------------------

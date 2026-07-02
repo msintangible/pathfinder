@@ -89,19 +89,9 @@ function urlScore() {
 
 /** Tier 2a — page embeds a schema.org JobPosting JSON-LD block. */
 function hasJobPostingJsonLd() {
-  for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
-    try {
-      const json = JSON.parse(el.textContent || "");
-      const nodes = Array.isArray(json) ? json : [json];
-      for (const node of nodes) {
-        const t = node?.["@type"];
-        if ((Array.isArray(t) ? t : [t]).includes("JobPosting")) return true;
-      }
-    } catch {
-      // Malformed JSON-LD — skip.
-    }
-  }
-  return false;
+  // collectJsonLdNodesByType is declared in jsonld.js, loaded before this
+  // file in manifest.json — shared traversal, see that file's header comment.
+  return collectJsonLdNodesByType("JobPosting").length > 0;
 }
 
 /** Tier 2b — a form contains fields typical of a job application. */

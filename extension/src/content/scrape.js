@@ -28,6 +28,29 @@ const MAX_CHARS = 30000;
 // text rather than falling back to readable extraction.
 const MIN_JSONLD_DESCRIPTION = 200;
 
+// Floor for the *final* extracted text, regardless of source. Below this,
+// the extraction is likely nav junk (e.g. a mis-scored "body" fallback) —
+// flag it for the caller rather than silently sending it on for analysis.
+const MIN_TEXT_LENGTH = 150;
+
+// Cheap job-shape sanity check, not a precision classifier. Deliberately a
+// separate, smaller list from detect.js's JOB_BODY_KEYWORDS/JOB_HEADING_KEYWORDS
+// rather than a shared import — detect.js runs in a different content script
+// with its own precision/recall needs (see the "two keyword lists" note in
+// the scraping system review), and this file has no module system to share
+// one via anyway.
+const QUALITY_KEYWORDS = [
+  "experience", "responsibilit", "requirement", "qualificat", "role",
+  "team", "skills", "salary", "remote", "hybrid", "full-time", "part-time",
+  "benefits", "apply",
+];
+
+/** Does the text contain at least one job-shaped keyword? */
+function hasJobKeywordOverlap(text) {
+  const lower = text.toLowerCase();
+  return QUALITY_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
 // Elements that are almost always noise, removed during text extraction.
 const NOISE_SELECTORS = [
   "nav",
@@ -188,24 +211,9 @@ function htmlToText(html) {
 
 /** Collect every JobPosting node from the page's JSON-LD blocks. */
 function collectJobPostings() {
-  const postings = [];
-  for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
-    let json;
-    try {
-      json = JSON.parse(el.textContent || "");
-    } catch {
-      continue; // malformed JSON-LD — skip
-    }
-    const stack = Array.isArray(json) ? [...json] : [json];
-    while (stack.length) {
-      const node = stack.pop();
-      if (!node || typeof node !== "object") continue;
-      if (Array.isArray(node["@graph"])) stack.push(...node["@graph"]);
-      const types = Array.isArray(node["@type"]) ? node["@type"] : [node["@type"]];
-      if (types.includes("JobPosting")) postings.push(node);
-    }
-  }
-  return postings;
+  // collectJsonLdNodesByType is declared in jsonld.js, loaded before this
+  // file in manifest.json — shared traversal, see that file's header comment.
+  return collectJsonLdNodesByType("JobPosting");
 }
 
 function orgName(org) {
@@ -389,6 +397,11 @@ function scrapePage() {
   const { text: finalText, truncated } = truncate(text, MAX_CHARS);
   const structured = buildStructured(best);
 
+  // Quality floor: flag, don't drop. A short false negative (a genuinely
+  // terse but valid posting) is cheap for a human/backend to override; a
+  // silent false positive (nav junk sent on as if it were a job posting) is not.
+  const lowConfidence = fullLength < MIN_TEXT_LENGTH || !hasJobKeywordOverlap(text);
+
   return {
     url: location.href,
     title: structured?.title || document.title || null,
@@ -397,6 +410,7 @@ function scrapePage() {
     structured, // { title, company, location, salary, employmentType, ... } | null
     length: fullLength,
     truncated,
+    lowConfidence, // true if extraction is too short or has no job-shaped keywords
     text: finalText,
   };
 }

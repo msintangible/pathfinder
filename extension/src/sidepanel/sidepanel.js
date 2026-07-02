@@ -120,7 +120,13 @@ async function scrapeActivePage() {
 
   let data;
   try {
-    data = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" });
+    // frameId: 0 pins this to the top-level frame. all_frames: true means
+    // iframe-embedded ATS content (Lever, Workday) now also runs detect.js,
+    // but broadcasting SCRAPE_PAGE to every frame with no frameId would
+    // return an arbitrary single frame's response — pinning keeps today's
+    // deterministic main-frame extraction. Per-frame scrape merging is a
+    // separate, larger change (see the scraping system review, §9).
+    data = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" }, { frameId: 0 });
   } catch {
     // Content script not present (e.g. chrome:// pages, or tab opened before
     // the extension loaded). Show the tab URL we do have, and guide the user.
@@ -245,7 +251,8 @@ async function analyseJob() {
 
   let scrape;
   try {
-    scrape = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" });
+    // frameId: 0 — see the comment in scrapeActivePage() above.
+    scrape = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" }, { frameId: 0 });
   } catch {
     showAnalysisStatus("Can't read this page — reload the tab and try again.", true);
     analyseJobBtn.disabled = false;

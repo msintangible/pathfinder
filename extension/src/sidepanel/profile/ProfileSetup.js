@@ -109,7 +109,10 @@ export function createProfileSetup({ onImported }) {
         setLinkedinHint("No active tab to read.");
         return;
       }
-      const scraped = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" });
+      // frameId: 0 pins this to the top-level frame — all_frames: true means
+      // broadcasting with no frameId would return an arbitrary single
+      // frame's response instead of the main page's.
+      const scraped = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" }, { frameId: 0 });
       if (scraped?.text) {
         linkedinText = scraped.text;
         el.querySelector('[data-url="linkedin"]').value = tab.url || "";
