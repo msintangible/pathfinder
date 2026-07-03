@@ -28,6 +28,7 @@
         "src/content/jsonld.js",
         "src/content/detect.js",
         "src/content/scrape.js",
+        "src/content/observe.js",
         "src/content/index.js"
       ],
       "run_at": "document_idle",
