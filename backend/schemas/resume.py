@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, field_validator
 
+from schemas.resume_layout import ContentPatch
+
 
 class GenerateResumeRequest(BaseModel):
     user_profile_id: uuid.UUID
@@ -43,9 +45,26 @@ class OptimizedResume(BaseModel):
         return value if value is not None else []
 
 
+class OptimizationPatchResponse(BaseModel):
+    """
+    The optimization LLM's actual output contract: it only ever returns
+    ContentPatch[] keyed by the block_ids it was given (see
+    services/synthetic_profile_layout.py) — never a restructured resume
+    object directly. A deterministic post-step (Patch Engine + flattening)
+    reconstructs OptimizedResume's external shape from this.
+    """
+    patches: list[ContentPatch]
+
+
 class ResumeGenerationResponse(BaseModel):
     ats_score: float
     matched_keywords: list[str]
     missing_keywords: list[str]
     optimized_resume: OptimizedResume
     download_url: str
+    # True when the candidate's own uploaded docx/pdf was edited in place
+    # (docx_renderer_v2.py / pdf_renderer_v2.py); False when generation fell
+    # back to the generic Jinja2/xhtml2pdf template — either because there
+    # was no source document, or profile_layout_correlator.py's confidence
+    # gate rejected the correlation this run produced.
+    layout_preserved: bool = False

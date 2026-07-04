@@ -22,6 +22,7 @@ class ResumeRepository:
         ats_score: float,
         rendered_file_url: str | None = None,
         rendered_file_format: str | None = None,
+        layout_preserved: bool = False,
     ) -> ResumeVersion:
         resume = ResumeVersion(
             user_profile_id=user_profile_id,
@@ -32,6 +33,7 @@ class ResumeRepository:
             ats_score=ats_score,
             rendered_file_url=rendered_file_url,
             rendered_file_format=rendered_file_format,
+            layout_preserved=layout_preserved,
         )
         self._session.add(resume)
         await self._session.commit()

@@ -27,19 +27,23 @@ global.chrome = {
   },
 };
 
-// --- Mock fetch: routes to either the auth-token mint or the canned analyze/generate response ---
+// --- Mock fetch: routes to either the auth-token mint or a canned response.
+// `queue` lets a test script a specific sequence of responses (e.g. 404 then
+// restore then retry); when empty, every call falls back to `nextResponse`. ---
 let nextResponse = { status: 200, body: {} };
+let queue = [];
 const requests = [];
 global.fetch = async (url, init) => {
   requests.push({ url, init });
   if (url.endsWith("/v1/auth/anonymous")) {
     return { ok: true, json: async () => ({ access_token: "test-token" }) };
   }
+  const canned = queue.length ? queue.shift() : nextResponse;
   return {
-    ok: nextResponse.status >= 200 && nextResponse.status < 300,
-    status: nextResponse.status,
-    json: async () => nextResponse.body,
-    text: async () => JSON.stringify(nextResponse.body),
+    ok: canned.status >= 200 && canned.status < 300,
+    status: canned.status,
+    json: async () => canned.body,
+    text: async () => JSON.stringify(canned.body),
   };
 };
 
@@ -83,6 +87,49 @@ await test("generateResume clears the cached token on a 401", async () => {
 
   assert(result.ok === false, "not ok");
   assert(storedLocal.authToken === undefined, "cached token cleared after 401");
+});
+
+await test("generateResume self-heals a stale profile_id via /v1/profile/restore", async () => {
+  storedLocal.profile = { name: "Jane Doe", technical_skills: ["Python"] };
+  queue = [
+    { status: 404, body: { detail: "Profile not found" } },
+    { status: 200, body: { id: "p2", profile: { name: "Jane Doe" } } },
+    { status: 200, body: { download_url: "/v1/resumes/r-1/download" } },
+  ];
+  requests.length = 0;
+
+  const result = await generateResume({ user_profile_id: "stale-id", job_id: "j-1" });
+
+  assert(result.ok === true, "ok after self-heal");
+  assert(requests.some((r) => r.url.endsWith("/v1/profile/restore")), "restore endpoint called");
+  const retryCall = requests[requests.length - 1];
+  assert(retryCall.url.endsWith("/v1/resumes/generate"), "final call is generate");
+  assert(JSON.parse(retryCall.init.body).user_profile_id === "p2", "retried with the restored profile id");
+  assert(storedLocal.profileId === "p2", "restored profile id persisted to storage");
+});
+
+await test("generateResume gives up cleanly when there's no cached profile to restore", async () => {
+  delete storedLocal.profile;
+  queue = [{ status: 404, body: { detail: "Profile not found" } }];
+  requests.length = 0;
+
+  const result = await generateResume({ user_profile_id: "stale-id", job_id: "j-1" });
+
+  assert(result.ok === false, "not ok");
+  assert(result.error.includes("Profile not found"), `error message: ${result.error}`);
+  assert(!requests.some((r) => r.url.endsWith("/v1/profile/restore")), "restore not attempted without a cached profile");
+});
+
+await test("generateResume leaves a non-profile 404 unchanged", async () => {
+  storedLocal.profile = { name: "Jane Doe" };
+  queue = [{ status: 404, body: { detail: "Job not found" } }];
+  requests.length = 0;
+
+  const result = await generateResume({ user_profile_id: "p-1", job_id: "bad-job" });
+
+  assert(result.ok === false, "not ok");
+  assert(result.error.includes("Job not found"), `error message: ${result.error}`);
+  assert(!requests.some((r) => r.url.endsWith("/v1/profile/restore")), "restore not attempted for a non-profile 404");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

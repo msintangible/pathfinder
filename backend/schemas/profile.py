@@ -176,3 +176,15 @@ class ProfileImportResponse(BaseModel):
     # The raw per-source content actually fed to the agent, so the client can
     # show the user what was found in each source (CV, LinkedIn, GitHub, portfolio).
     sources: CandidateProfileInput
+
+
+class ProfileRestoreRequest(BaseModel):
+    """A client-cached CandidateProfile whose backend row is gone (e.g. after
+    a database reset) — re-persisted as-is, skipping the LLM analysis step
+    since the data was already analyzed once."""
+    profile: CandidateProfile
+
+
+class ProfileRestoreResponse(BaseModel):
+    id: uuid.UUID
+    profile: CandidateProfile

@@ -33,6 +33,7 @@ function createChromeMock({
   resumeResult = null,
   generateResult = null,
   tabId = 1,
+  authToken = "test-token",
 } = {}) {
   const sent = [];
   const listeners = {};
@@ -45,6 +46,7 @@ function createChromeMock({
           if (key === "profileId") return profileId != null ? { profileId } : {};
           if (key === "profile") return profile != null ? { profile } : {};
           if (key === "backendUrl") return { backendUrl };
+          if (key === "authToken") return authToken != null ? { authToken } : {};
           return {};
         },
         set: async () => {},
@@ -168,7 +170,10 @@ await test("generate success: renders ATS score, keywords, changes, and Open Res
   assert(openResumeBtn, "Open Resume button present");
   openResumeBtn.click();
   await flush();
-  assert(tabsCreated[0]?.url === "http://localhost:8003/v1/resumes/abc/download", `opened URL: ${tabsCreated[0]?.url}`);
+  assert(
+    tabsCreated[0]?.url === "http://localhost:8003/v1/resumes/abc/download?token=test-token",
+    `opened URL: ${tabsCreated[0]?.url}`
+  );
 });
 
 await test("generate failure: shows GENERATE_FAILED, re-enables button, no result", async () => {

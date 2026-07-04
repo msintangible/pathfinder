@@ -11,6 +11,7 @@
 
 import { Message, StorageKey } from "../../shared/constants.js";
 import { loadProfile, loadProfileId, getBaseUrl } from "../../shared/profileApi.js";
+import { getAuthToken } from "../../shared/auth.js";
 
 const root = document.getElementById("optimize-root");
 
@@ -72,10 +73,15 @@ function keywordSection(label, keywords, variant) {
   return wrap;
 }
 
-/** Open the generated resume's PDF in a new browser tab. */
+/** Open the generated resume's PDF in a new browser tab.
+ *  A plain tab navigation can't carry an Authorization header, so the token
+ *  rides along as a query param instead — see get_current_user_allow_query_token. */
 async function openResume(downloadUrl) {
   const base = await getBaseUrl();
-  chrome.tabs.create({ url: `${base}${downloadUrl}` });
+  const token = await getAuthToken(base);
+  const url = new URL(`${base}${downloadUrl}`);
+  url.searchParams.set("token", token);
+  chrome.tabs.create({ url: url.toString() });
 }
 
 /** Render the ATS score, keyword match, change explanation, and PDF link. */

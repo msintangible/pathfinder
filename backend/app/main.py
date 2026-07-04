@@ -1,3 +1,4 @@
+import logging
 import uuid
 from contextlib import asynccontextmanager
 import uvicorn
@@ -11,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from database.session import engine
 from models.base import Base
 
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -61,6 +63,7 @@ async def attach_request_id(request: Request, call_next):
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     request_id = getattr(request.state, "request_id", None)
+    logger.exception("Unhandled exception (requestId=%s)", request_id)
     return JSONResponse(
         status_code=500,
         content={

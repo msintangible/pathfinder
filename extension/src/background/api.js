@@ -9,6 +9,7 @@
  */
 
 import { getAuthToken, clearAuthToken } from "../shared/auth.js";
+import { loadProfile, saveProfileId } from "../shared/profileApi.js";
 
 const DEFAULT_BASE_URL = "http://localhost:8003";
 
@@ -80,20 +81,69 @@ export async function analyzeJob({ raw_text, url } = {}) {
   }
 }
 
+function postGenerate(base, token, user_profile_id, job_id) {
+  return fetchWithTimeout(`${base}/v1/resumes/generate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ user_profile_id, job_id }),
+  });
+}
+
+/**
+ * Re-persists the locally cached profile via /v1/profile/restore, skipping
+ * LLM analysis since this data was already analyzed once. Returns the new
+ * profile id, or null if there's nothing cached to restore from.
+ */
+async function restoreProfile(base, token) {
+  const profile = await loadProfile();
+  if (!profile) return null;
+
+  const res = await fetchWithTimeout(`${base}/v1/profile/restore`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ profile }),
+  });
+  if (!res.ok) return null;
+
+  const { id } = await res.json();
+  if (!id) return null;
+  await saveProfileId(id);
+  return id;
+}
+
 export async function generateResume({ user_profile_id, job_id } = {}) {
   if (!user_profile_id || !job_id) return { ok: false, error: "Missing profile or job id." };
   try {
     const base = await getBaseUrl();
     const token = await getAuthToken(base);
-    const res = await fetchWithTimeout(`${base}/v1/resumes/generate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ user_profile_id, job_id }),
-    });
+
+    let res = await postGenerate(base, token, user_profile_id, job_id);
+
+    // A cached profile_id can outlive the row it points to (e.g. a backend
+    // database reset) — self-heal by re-persisting the locally cached
+    // profile and retrying once, instead of forcing a manual re-import.
+    if (res.status === 404) {
+      const rawBody = await res.text();
+      let body = null;
+      try { body = JSON.parse(rawBody); } catch { /* not JSON */ }
+
+      if (body?.detail === "Profile not found") {
+        const restoredId = await restoreProfile(base, token);
+        if (!restoredId) return { ok: false, error: "HTTP 404: Profile not found" };
+        res = await postGenerate(base, token, restoredId, job_id);
+      } else {
+        return { ok: false, error: `HTTP 404: ${rawBody}` };
+      }
+    }
+
     if (!res.ok) {
       if (res.status === 401) await clearAuthToken();
       return { ok: false, error: `HTTP ${res.status}: ${await res.text()}` };

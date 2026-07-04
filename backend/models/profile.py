@@ -42,10 +42,16 @@ class UserProfile(Base, PrimaryKeyMixin):
     # --- Ingestion sources ---
     # The originally uploaded CV file, stored so resume generation can edit it
     # in place (preserving its real layout) instead of rendering a generic
-    # template. Only set for formats we can edit in place (currently docx —
-    # see docx_resume_renderer.py); null for pdf-sourced profiles for now.
+    # template — see docx_renderer_v2.py / pdf_renderer_v2.py.
     source_document_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_document_format: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The Resume Layout Model (schemas.resume_layout.ResumeLayoutDocument)
+    # built from source_document_path at import time — rich/deterministic for
+    # docx (docx_layout_extractor.py), coordinate-based plus a best-effort
+    # Gemini vision pass for section roles for pdf (pdf_layout_extractor.py +
+    # gemini_vision_layout_agent.py). Null if extraction failed, or if no
+    # source document was uploaded (LinkedIn/GitHub-only profiles).
+    layout_document: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     github_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     portfolio_url: Mapped[str | None] = mapped_column(Text, nullable=True)

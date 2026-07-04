@@ -21,6 +21,7 @@ class ProfileRepository:
         portfolio_url: str | None = None,
         source_document_path: str | None = None,
         source_document_format: str | None = None,
+        layout_document: dict | None = None,
     ) -> UserProfile:
         profile = UserProfile(
             user_id=user_id,
@@ -30,6 +31,7 @@ class ProfileRepository:
             portfolio_url=portfolio_url,
             source_document_path=source_document_path,
             source_document_format=source_document_format,
+            layout_document=layout_document,
             headline=analysis.get("headline"),
             summary=analysis.get("summary"),
             technical_skills=analysis.get("technical_skills") or None,
