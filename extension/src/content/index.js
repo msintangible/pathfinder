@@ -13,16 +13,37 @@
  * All network I/O and storage go through the service worker.
  */
 
+// `chrome.runtime.id` reads undefined the instant this content script's
+// extension context is invalidated (e.g. the extension reloaded/updated
+// while this tab stayed open). Once that happens the script is a
+// permanent zombie for the rest of this page's life — every future
+// sendMessage attempt is guaranteed to fail the same way — so callers
+// check this and tear the observer pipeline down for good instead of
+// retrying forever on every DOM mutation or SPA route change.
+function isExtensionContextValid() {
+  return !!chrome.runtime?.id;
+}
+
 function reportDetection() {
-  chrome.runtime
-    .sendMessage({ type: "PAGE_DETECTED", payload: detect() })
-    .catch(() => {
-      // Service worker may be asleep or the context invalidated on fast navigation.
-      // The side panel re-requests detection when it opens, so this is non-fatal.
-    });
+  if (!isExtensionContextValid()) return;
+  try {
+    chrome.runtime
+      .sendMessage({ type: "PAGE_DETECTED", payload: detect() })
+      .catch(() => {
+        // Service worker may be asleep or the context invalidated on fast navigation.
+        // The side panel re-requests detection when it opens, so this is non-fatal.
+      });
+  } catch {
+    // Synchronous throw: the context was invalidated between the check
+    // above and this call. Non-fatal for the same reason as the .catch().
+  }
 }
 
 function rescore() {
+  if (!isExtensionContextValid()) {
+    stopObserving();
+    return;
+  }
   reportDetection();
   // Re-run the extraction pipeline too, discarding the result: scrapePage()
   // already recomputes fresh from the live DOM on every on-demand SCRAPE_PAGE
@@ -39,6 +60,10 @@ reportDetection();
 // changes (a fresh URL gets its own debounced observation window).
 startObserving(rescore);
 watchRouteChanges(() => {
+  if (!isExtensionContextValid()) {
+    stopObserving();
+    return;
+  }
   reportDetection();
   startObserving(rescore);
 });

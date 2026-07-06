@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Pathfinder Chrome extension (frontend). Plain JS — no build step. devDependencies are test-only and do not affect how the extension loads.",
   "scripts": {
-    "test": "node tests/scrape.test.mjs && node tests/detect.test.mjs && node tests/observe.test.mjs && node tests/background.test.mjs && node tests/profileMapper.test.mjs && node tests/auth.test.mjs && node tests/profileApi.test.mjs && node tests/api.test.mjs && node tests/profileSetup.test.mjs && node tests/profileController.test.mjs && node tests/optimizeController.test.mjs"
+    "test": "node tests/scrape.test.mjs && node tests/detect.test.mjs && node tests/observe.test.mjs && node tests/index.test.mjs && node tests/background.test.mjs && node tests/profileMapper.test.mjs && node tests/auth.test.mjs && node tests/profileApi.test.mjs && node tests/api.test.mjs && node tests/profileSetup.test.mjs && node tests/profileController.test.mjs && node tests/optimizeController.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"
