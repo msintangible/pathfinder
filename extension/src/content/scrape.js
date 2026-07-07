@@ -14,10 +14,11 @@
  *      link density + class/id hints) and extract its visible text.
  *   3. Body fallback — last resort for unrecognised pages.
  *
- * Text extraction walks the LIVE DOM with a TreeWalker, skipping hidden and
- * noise nodes and preserving block-level line breaks. It never clones or
- * mutates the page (an earlier version read innerText off a detached clone,
- * which is unreliable — innerText needs a rendered layout).
+ * Text extraction walks the LIVE DOM manually (descending into open shadow
+ * roots — see extractText), skipping hidden and noise nodes and preserving
+ * block-level line breaks. It never clones or mutates the page (an earlier
+ * version read innerText off a detached clone, which is unreliable —
+ * innerText needs a rendered layout).
  */
 
 // Upper bound on returned text. A job description is rarely over ~10k chars;
@@ -104,6 +105,21 @@ const CONTENT_SELECTORS = [
   "section",
 ];
 
+// Escape hatch for a specific site whose layout defeats the generic
+// heuristics above — deliberately NOT a general per-ATS adapter registry
+// (see the scraping-system review §5: build a full adapter interface only
+// once 3+ real sites need dedicated logic; until then this stays a short,
+// flat list, or empty). pickMainContent() tries a match's selector before
+// falling back to CONTENT_SELECTORS.
+const CONTENT_SELECTOR_OVERRIDES = [
+  // { pattern: /example\.com\/jobs\//, selector: "#job-body" },
+];
+
+/** First override whose pattern matches the current page's URL, or null. */
+function matchingOverride() {
+  return CONTENT_SELECTOR_OVERRIDES.find((o) => o.pattern.test(location.href)) || null;
+}
+
 // ---------------------------------------------------------------------------
 // Visibility & text helpers
 // ---------------------------------------------------------------------------
@@ -139,56 +155,54 @@ function normalise(text) {
 }
 
 /**
- * Extract visible text from a live element, skipping hidden and noise nodes
- * and inserting newlines at block boundaries. Does not mutate the page.
+ * Extract visible text from a live element, skipping hidden and noise nodes,
+ * descending into open shadow roots, and inserting newlines at block
+ * boundaries. Does not mutate the page.
+ *
+ * Walks manually rather than via TreeWalker: TreeWalker never crosses shadow
+ * boundaries, so a web-component-based ATS UI's description would otherwise
+ * be invisible here. When an element has a shadow root, its shadow content is
+ * walked in place of its own light-DOM children — this treats shadow content
+ * as fully replacing the host's rendered output, which is correct for the
+ * common no-<slot> case; resolving actual slot assignment is out of scope.
  */
 function extractText(root) {
   if (!root) return "";
 
   const noise = new Set();
   for (const sel of NOISE_SELECTORS) {
-    for (const node of root.querySelectorAll(sel)) noise.add(node);
+    for (const node of querySelectorAllDeep(root, sel)) noise.add(node);
   }
-
-  const walker = root.ownerDocument.createTreeWalker(
-    root,
-    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
-    {
-      acceptNode(node) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          if (node.tagName === "BR") return NodeFilter.FILTER_ACCEPT;
-          // REJECT prunes the whole subtree — drop noise and hidden branches.
-          if (noise.has(node) || isHidden(node)) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_SKIP; // visit children, ignore the tag itself
-        }
-        return node.textContent.trim()
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT;
-      },
-    }
-  );
 
   const parts = [];
   let prevBlock = null;
 
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      // Only BR reaches here — treat as a hard line break.
+  function visit(node, blockRoot) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const chunk = node.textContent.replace(/\s+/g, " ").trim();
+      if (!chunk) return;
+      const block = closestBlock(node.parentElement, blockRoot);
+      if (parts.length) parts.push(block !== prevBlock ? "\n" : " ");
+      parts.push(chunk);
+      prevBlock = block;
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.tagName === "BR") {
       parts.push("\n");
       prevBlock = null;
-      continue;
+      return;
     }
+    if (noise.has(node) || isHidden(node)) return; // prune subtree
 
-    const chunk = node.textContent.replace(/\s+/g, " ").trim();
-    if (!chunk) continue;
-
-    const block = closestBlock(node.parentElement, root);
-    if (parts.length) parts.push(block !== prevBlock ? "\n" : " ");
-    parts.push(chunk);
-    prevBlock = block;
+    if (node.shadowRoot) {
+      for (const child of node.shadowRoot.childNodes) visit(child, node.shadowRoot);
+      return;
+    }
+    for (const child of node.childNodes) visit(child, blockRoot);
   }
+
+  for (const child of root.childNodes) visit(child, root);
 
   return parts.join("");
 }
@@ -320,7 +334,7 @@ function scoreElement(el) {
   if (len < 200) return 0;
 
   let linkLen = 0;
-  for (const a of el.querySelectorAll("a")) linkLen += (a.textContent || "").length;
+  for (const a of querySelectorAllDeep(el, "a")) linkLen += (a.textContent || "").length;
   const linkDensity = Math.min(linkLen / len, 1);
 
   let score = len * (1 - linkDensity);
@@ -330,18 +344,22 @@ function scoreElement(el) {
   return score;
 }
 
-/** Choose the highest-scoring content container, or fall back to <body>. */
-function pickMainContent() {
+/**
+ * Highest-scoring element matched by any of `selectors` (shadow-DOM aware,
+ * deduplicated across selectors), or null. `cap` bounds how many distinct
+ * elements get scored, protecting against very large pages.
+ */
+function bestScoringElement(selectors, cap = 500) {
   const seen = new Set();
   let best = null;
   let bestScore = 0;
   let scored = 0;
 
-  for (const sel of CONTENT_SELECTORS) {
-    for (const el of document.querySelectorAll(sel)) {
+  for (const sel of selectors) {
+    for (const el of querySelectorAllDeep(document, sel)) {
       if (seen.has(el)) continue;
       seen.add(el);
-      if (++scored > 500) break; // safety bound on very large pages
+      if (++scored > cap) break;
       const score = scoreElement(el);
       if (score > bestScore) {
         bestScore = score;
@@ -349,7 +367,20 @@ function pickMainContent() {
       }
     }
   }
-  return best || document.body;
+  return best;
+}
+
+/** Choose the highest-scoring content container, or fall back to <body>. */
+function pickMainContent() {
+  const override = matchingOverride();
+  if (override) {
+    const best = bestScoringElement([override.selector]);
+    // A matched override whose selector finds nothing usable (e.g. the site
+    // changed its markup since the override was written) falls through to
+    // the generic heuristics below rather than returning an empty container.
+    if (best) return best;
+  }
+  return bestScoringElement(CONTENT_SELECTORS) || document.body;
 }
 
 // ---------------------------------------------------------------------------

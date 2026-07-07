@@ -96,8 +96,8 @@ function hasJobPostingJsonLd() {
 
 /** Tier 2b — a form contains fields typical of a job application. */
 function hasApplicationForm() {
-  for (const form of document.querySelectorAll("form")) {
-    const fields = form.querySelectorAll("input, textarea, select");
+  for (const form of querySelectorAllDeep(document, "form")) {
+    const fields = querySelectorAllDeep(form, "input, textarea, select");
     if (fields.length < 3) continue;
     const hasJobFields = Array.from(fields).some((f) =>
       APPLICATION_FIELD_RE.test(f.name || f.id || f.placeholder || "")
@@ -110,7 +110,7 @@ function hasApplicationForm() {
 /** Tier 2c — headings contain job-description language. */
 function hasJobHeadings() {
   const text = Array.from(
-    document.querySelectorAll("h1, h2, h3, h4, [role='heading'], button")
+    querySelectorAllDeep(document, "h1, h2, h3, h4, [role='heading'], button")
   )
     .map((el) => el.textContent?.trim().toLowerCase() || "")
     .join(" ");
@@ -119,6 +119,12 @@ function hasJobHeadings() {
 
 /** Tier 2d — page body contains multiple job-posting content signals. */
 function hasJobBodyContent() {
+  // innerText doesn't reflect shadow-DOM text; unlike the selector-based
+  // tiers above, deep-querying here would mean re-walking and re-joining
+  // every open shadow root's text, which is scrape.js's job (extractText),
+  // not a cheap sanity check. Tiers 1/2a/2b/2c already cover shadow-DOM
+  // pages via querySelectorAllDeep, so this one tier staying light-DOM-only
+  // is an acceptable gap.
   const text = (document.body?.innerText || "").slice(0, 8000).toLowerCase();
   const hits = JOB_BODY_KEYWORDS.filter((kw) => text.includes(kw)).length;
   return hits >= JOB_BODY_THRESHOLD;

@@ -22,14 +22,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// detect.js calls collectJsonLdNodesByType(), declared in jsonld.js, which
-// manifest.json loads first into the same content-script global scope —
-// concatenate the two here to mirror that load order.
+// detect.js calls collectJsonLdNodesByType() (jsonld.js) and
+// querySelectorAllDeep() (dom.js), both loaded before it into the same
+// content-script global scope by manifest.json — concatenate all three here
+// to mirror that load order.
+const DOM_SRC = fs.readFileSync(path.join(__dirname, "../src/content/dom.js"), "utf8");
 const JSONLD_SRC = fs.readFileSync(path.join(__dirname, "../src/content/jsonld.js"), "utf8");
-const SRC = JSONLD_SRC + "\n" + fs.readFileSync(path.join(__dirname, "../src/content/detect.js"), "utf8");
+const SRC = DOM_SRC + "\n" + JSONLD_SRC + "\n" + fs.readFileSync(path.join(__dirname, "../src/content/detect.js"), "utf8");
 
-/** Load detect.js against an HTML fixture and return its tier functions + detect(). */
-function makeDetector(html, url = "https://example.com/careers/some-role") {
+/**
+ * Load detect.js against an HTML fixture and return its tier functions +
+ * detect(). `setup`, if given, runs against the parsed document before the
+ * tier functions are built — used to attach real shadow roots, which static
+ * HTML markup can't declare.
+ */
+function makeDetector(html, url = "https://example.com/careers/some-role", setup) {
   const dom = new JSDOM(html, { url });
   const { window } = dom;
   // jsdom doesn't implement innerText (see scrape.test.mjs's note). detect.js's
@@ -42,6 +49,7 @@ function makeDetector(html, url = "https://example.com/careers/some-role") {
       return this.textContent;
     },
   });
+  if (setup) setup(window.document);
   const factory = new Function(
     "document", "location",
     `${SRC}\nreturn { detect, urlScore, hasJobPostingJsonLd, hasApplicationForm, hasJobHeadings, hasJobBodyContent, hasJobMetaTags };`
@@ -150,6 +158,22 @@ test("hasJobPostingJsonLd: true for a JobPosting nested only inside @graph", () 
   assert(d.hasJobPostingJsonLd() === true, "expected true for @graph-nested JobPosting");
 });
 
+test("hasJobPostingJsonLd: true for a JobPosting script rendered inside an open shadow root", () => {
+  const d = makeDetector(
+    `<!doctype html><html><head><title>x</title></head><body><job-widget></job-widget></body></html>`,
+    undefined,
+    (document) => {
+      const shadow = document.querySelector("job-widget").attachShadow({ mode: "open" });
+      shadow.innerHTML = `<script type="application/ld+json">${JSON.stringify({
+        "@context": "https://schema.org/",
+        "@type": "JobPosting",
+        title: "Backend Engineer",
+      })}</script>`;
+    }
+  );
+  assert(d.hasJobPostingJsonLd() === true, "expected true for shadow-DOM-rendered JSON-LD");
+});
+
 // ---------------------------------------------------------------------------
 // Tier 2b — hasApplicationForm()
 // ---------------------------------------------------------------------------
@@ -192,6 +216,22 @@ test("false positive guard: 3+ field newsletter/contact form does NOT count as a
   assert(d.hasApplicationForm() === false, "newsletter/contact form must not match");
 });
 
+test("hasApplicationForm: true for a job application form rendered inside an open shadow root", () => {
+  const d = makeDetector(
+    `<!doctype html><html><head><title>Apply</title></head><body><apply-widget></apply-widget></body></html>`,
+    undefined,
+    (document) => {
+      const shadow = document.querySelector("apply-widget").attachShadow({ mode: "open" });
+      shadow.innerHTML = `<form>
+        <input name="first_name" />
+        <input name="last_name" />
+        <input name="resume" type="file" />
+      </form>`;
+    }
+  );
+  assert(d.hasApplicationForm() === true, "expected true for shadow-DOM-rendered application form");
+});
+
 // ---------------------------------------------------------------------------
 // Tier 2c — hasJobHeadings()
 // ---------------------------------------------------------------------------
@@ -209,6 +249,18 @@ test("hasJobHeadings: false with only generic headings", () => {
   </body></html>`;
   const d = makeDetector(html);
   assert(d.hasJobHeadings() === false, "expected false");
+});
+
+test("hasJobHeadings: true for a heading rendered inside an open shadow root", () => {
+  const d = makeDetector(
+    `<!doctype html><html><head><title>x</title></head><body><job-widget></job-widget></body></html>`,
+    undefined,
+    (document) => {
+      const shadow = document.querySelector("job-widget").attachShadow({ mode: "open" });
+      shadow.innerHTML = `<h2>Responsibilities</h2><p>Own the payments pipeline.</p>`;
+    }
+  );
+  assert(d.hasJobHeadings() === true, "expected true for shadow-DOM-rendered heading");
 });
 
 // ---------------------------------------------------------------------------
