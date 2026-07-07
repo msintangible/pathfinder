@@ -12,6 +12,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from database.session import engine
 from models.base import Base
 
+# Without this, the root logger stays at its default WARNING level and every
+# logger.info/debug call app-wide (resume_generation_agent, profile_layout_correlator,
+# etc.) is silently dropped — only uvicorn's own request logs and actual
+# exceptions would ever show up.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+
 logger = logging.getLogger(__name__)
 
 

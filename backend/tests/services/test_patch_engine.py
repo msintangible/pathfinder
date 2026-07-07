@@ -164,6 +164,64 @@ def test_skills_section_without_a_detected_separator_falls_back_to_word_alignmen
 
 
 # ---------------------------------------------------------------------------
+# Hyperlink runs are pinned, never rewritten
+# ---------------------------------------------------------------------------
+
+def test_hyperlink_run_keeps_its_original_text_and_url():
+    runs = [
+        RunSpan(text="Built APIs for "),
+        RunSpan(text="GitHub", hyperlink_url="https://github.com/example"),
+        RunSpan(text=" using Python."),
+    ]
+    document = _document(LayoutSection(
+        section_id="s0",
+        blocks=[_block("p[0]", "Built APIs for GitHub using Python.", runs)],
+    ))
+
+    result = apply_patches(
+        document, [ContentPatch(block_id="p[0]", new_text="Engineered RESTful APIs using Python and AWS.")]
+    )
+
+    block = _block_by_id(result.document, "p[0]")
+    assert block.runs[1].text == "GitHub"
+    assert block.runs[1].hyperlink_url == "https://github.com/example"
+
+
+def test_new_text_is_redistributed_only_across_non_hyperlink_runs():
+    runs = [
+        RunSpan(text="Built APIs for "),
+        RunSpan(text="GitHub", hyperlink_url="https://github.com/example"),
+        RunSpan(text=" using Python."),
+    ]
+    document = _document(LayoutSection(
+        section_id="s0",
+        blocks=[_block("p[0]", "Built APIs for GitHub using Python.", runs)],
+    ))
+
+    result = apply_patches(
+        document, [ContentPatch(block_id="p[0]", new_text="Engineered RESTful APIs using Python and AWS.")]
+    )
+
+    block = _block_by_id(result.document, "p[0]")
+    non_hyperlink_words = " ".join(r.text for r in block.runs if r.hyperlink_url is None).split()
+    assert non_hyperlink_words == "Engineered RESTful APIs using Python and AWS.".split()
+    # The pinned run's own words never got merged into the surrounding text.
+    assert "GitHub" not in non_hyperlink_words
+
+
+def test_block_that_is_only_a_hyperlink_is_left_completely_unchanged():
+    runs = [RunSpan(text="https://myportfolio.dev", hyperlink_url="https://myportfolio.dev")]
+    document = _document(LayoutSection(
+        section_id="s0", blocks=[_block("p[0]", "https://myportfolio.dev", runs)],
+    ))
+
+    result = apply_patches(document, [ContentPatch(block_id="p[0]", new_text="My Portfolio")])
+
+    block = _block_by_id(result.document, "p[0]")
+    assert block.runs[0].text == "https://myportfolio.dev"
+
+
+# ---------------------------------------------------------------------------
 # Table-cell blocks
 # ---------------------------------------------------------------------------
 

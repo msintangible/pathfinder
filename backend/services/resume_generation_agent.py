@@ -28,8 +28,11 @@ logger = logging.getLogger(__name__)
 # existing generic-template renderer instead of risking a half-updated file.
 _RENDER_CONFIDENCE_THRESHOLD = 0.6
 
-_SYSTEM_PROMPT = """Tailor this candidate's resume to the job posting. You are editing
-existing wording under strict structural constraints — you are not writing a new resume.
+_SYSTEM_PROMPT = """You are a professional resume editor, not a resume writer. Think Microsoft
+Word's Track Changes, not an AI generating a new document: you are making
+targeted edits to an existing resume, and if the candidate compared the
+original and your output side-by-side, it should read as the same document,
+professionally sharpened — not a rewrite.
 
 You will receive editable_blocks: a list of {block_id, text}, where text is
 that block's current wording ("" for blocks meant to be authored fresh — see
@@ -38,25 +41,75 @@ never fewer, never more, and never a block_id you weren't given. candidate_profi
 is provided as read-only context for the whole profile (all skill categories,
 full work history) to inform your rewrites — you can only ever change
 wording through editable_blocks, never candidate_profile's structure directly.
+Structure itself — section order, entry order, company/title/dates, bullet
+count — is entirely out of your hands; only wording is.
 
-Allowed edits:
-- Rewrite bullet/description text with stronger action verbs and clearer
-  technical phrasing.
-- Naturally weave matched_keywords into existing bullets/description using the
-  candidate's real experience — never just list keywords.
-  Bad:  "Used Python, AWS, Docker, Kubernetes, Terraform, React, Node.js..."
-  Good: "Built backend services using Python and Docker, deployed on AWS..."
-- Slightly expand or compress a bullet's wording within reason — do not pad
-  with unrelated content or drop the point it was making.
-- For the "skills" block: write a single comma-separated list synthesizing
+new_text is the complete, final replacement for a block's wording — never a
+combination of the old and new phrasing. If you decide a bullet needs a
+keyword woven in, rewrite the sentence itself; do not keep the original
+sentence and tack a new one onto it.
+  Bad:  "Built APIs. Built RESTful APIs using ASP.NET Core and SQL Server."
+  Good: "Built RESTful APIs using ASP.NET Core and SQL Server."
+
+Editing philosophy: every edit must have a reason. An unchanged block is
+better than an unnecessary rewrite. Before touching each block, ask "does
+this already communicate the point, in language the job posting would
+recognize?" — if yes, return it unchanged (new_text identical to text).
+
+Priority order — resolve conflicts between these in this order:
+1. Never invent. No skill, employer, title, date, technology, or achievement
+   may appear that isn't already in candidate_profile.
+2. Preserve structure. You cannot rename sections, change entry order/count,
+   or touch company/title/dates — the pipeline enforces this outside your
+   reach, so focus entirely on wording.
+3. Maximise ATS keyword coverage — see the per-block test below.
+4. Preserve writing style. Don't rewrite a sentence that already works.
+5. Improve impact — stronger action verbs, technical specificity, measurable
+   outcomes — only where it doesn't change what actually happened.
+
+ATS keyword test — apply this to every bullet/description block before
+rewriting it: "Can this block naturally demonstrate any currently
+missing_keyword, required_skill, or preferred_skill using the candidate's
+real experience already described here?" If yes, rewrite the wording to
+surface that concept naturally, the way a technical resume would phrase it —
+never as a bolted-on keyword list.
+  Bad:  "Worked on cloud research. Skills: AWS Lambda, API Gateway, EC2."
+  Good: "Researched AWS Lambda, API Gateway, and EC2 to support cloud
+         architecture and scalability decisions."
+If no genuine support exists for a missing_keyword, leave the block alone —
+never fabricate the experience to claim it.
+
+Section rules:
+- summary: rewrite freely to target the role.
+- skills: write a single comma-separated list compiled from
   candidate_profile's technical_skills, programming_languages, frameworks,
   libraries, databases, cloud_platforms, devops_tools, ai_ml_tools, and
-  development_tools, prioritizing whatever's relevant to this job.
-- For the "changes_summary" block: write 2-5 short, plain-language lines (one
-  per line) explaining what you emphasized or reworded and why — reference
-  specific matched_keywords you leaned into, and mention any missing_keywords
-  you could not address because the candidate has no real experience with
-  them. Write for the candidate to read, not as a raw keyword list.
+  development_tools — reordered to prioritize whatever's relevant to this
+  job. Every item must already exist in one of those lists; never add or
+  drop a genuine skill.
+- experience bullets: wording only. Keep each bullet roughly its original
+  length — expand only as far as a genuinely supported keyword requires, and
+  never enough to noticeably lengthen the overall document.
+- projects: description and technologies may be reworded/surfaced the same
+  way as experience bullets; entry order is decided upstream, not by you.
+- changes_summary: write 2-5 lines (one per line), and every line must cover
+  all three of:
+  (1) WHERE — the real section/entry, named the way the candidate would
+      recognize it (e.g. "your FluxPro internship bullet about JWT
+      authentication", "your Skills section", "the Kitchen Co-pilot project
+      description") — never a block_id.
+  (2) WHAT changed — the actual edit in plain language (reworded for
+      clarity, added a keyword, restructured for impact, or left unchanged
+      because it already covered the point) — not just "emphasized X".
+  (3) WHY it matters for this job — tie it to a specific requirement from
+      the job (a required/preferred skill, a responsibility, or a
+      matched/missing keyword) — not just "included matched keywords".
+  For any missing_keyword you could not address, say which requirement it
+  maps to and that the candidate's real experience doesn't support claiming
+  it.
+  Example line: "In your FluxPro internship bullet about JWT authentication,
+  I added 'RESTful API design' since the job lists API design as a required
+  skill and your work already did this — just wasn't named explicitly."
 
 Never allowed:
 - Never invent skills, employers, titles, dates, or achievements not already in
@@ -117,23 +170,40 @@ class ResumeGenerationAgent:
         or the correlation wasn't confident enough to trust.
         """
         if layout_document is None:
+            logger.debug("_build_render_layout: no layout_document given — skipping real in-place rendering")
             return None, False
 
         real_layout = ResumeLayoutDocument.model_validate(layout_document)
         correlation = correlate_profile_to_layout(ranked_profile, real_layout)
+        logger.info(
+            "_build_render_layout: correlation matched %d/%d fields (%.0f%%), skills %s, threshold=%.0f%%",
+            correlation.matched_count, correlation.total_count, correlation.match_rate * 100,
+            "matched" if "skills" in correlation.block_id_map else "unmatched",
+            _RENDER_CONFIDENCE_THRESHOLD * 100,
+        )
         if correlation.match_rate < _RENDER_CONFIDENCE_THRESHOLD:
             logger.warning(
-                "Layout correlation confidence too low (%.0f%%) — falling back to the generic renderer",
-                correlation.match_rate * 100,
+                "Layout correlation confidence too low (%.0f%% < %.0f%%) — falling back to the generic renderer",
+                correlation.match_rate * 100, _RENDER_CONFIDENCE_THRESHOLD * 100,
             )
             return None, False
 
-        real_patches = [
-            ContentPatch(block_id=correlation.block_id_map[patch.block_id], new_text=patch.new_text)
-            for patch in patches
-            if patch.block_id in correlation.block_id_map
-        ]
+        real_patches = []
+        for patch in patches:
+            real_block_id = correlation.block_id_map.get(patch.block_id)
+            if real_block_id is None:
+                logger.debug(
+                    "_build_render_layout: dropping patch for %s — no real-document correlation found",
+                    patch.block_id,
+                )
+                continue
+            real_patches.append(ContentPatch(block_id=real_block_id, new_text=patch.new_text))
+
         real_patch_result = apply_patches(real_layout, real_patches)
+        logger.info(
+            "_build_render_layout: applied %d/%d patches to the real document layout",
+            len(real_patches), len(patches),
+        )
         return real_patch_result.document.model_dump(), True
 
     async def _optimize(

@@ -17,7 +17,7 @@ const DEFAULT_BASE_URL = "http://localhost:8003";
 // calling UI action forever — fetch() has no built-in timeout, so every
 // request is bounded by an AbortController instead of relying on the
 // browser's own (much longer, sometimes absent) socket timeout.
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 60000;
 
 export async function getBaseUrl() {
   const { backendUrl } = await chrome.storage.local.get("backendUrl");

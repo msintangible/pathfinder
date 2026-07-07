@@ -15,16 +15,29 @@ fuzzy search did. That's what makes a real match failure rare enough to gate on,
 rather than a routine occurrence.
 """
 
+import logging
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 from schemas.resume_layout import LayoutSection, ResumeLayoutDocument, SectionRole, TextBlock
 
+logger = logging.getLogger(__name__)
+
 # Below this similarity, a profile field is treated as having no reliable
 # real-document counterpart and is left uncorrelated rather than risking a
 # wrong match — see CorrelationResult.match_rate for the overall confidence
 # gate this feeds into.
-_MATCH_THRESHOLD = 0.7
+#
+# 0.55, not something stricter: CandidateProfileAgent extracts profile fields
+# via an LLM, which realistically cleans up/rewords bullets even under a
+# "don't invent" instruction (fixing tense, spelling out numbers, swapping
+# synonyms) — it was never instructed to copy verbatim. Measured directly:
+# a real, mildly-reworded bullet pair ("2M+ transactions per day" vs.
+# "2 million transactions daily", same fact, same length) scores 0.667 on
+# difflib.SequenceMatcher — comfortably above 0.55, while genuinely unrelated
+# bullets in the same test scored 0.20-0.33. 0.7 was rejecting realistic
+# extractions as "no match" with no real gain in false-positive safety.
+_MATCH_THRESHOLD = 0.55
 
 _SKILLS_HEADING_KEYWORDS = ("skill", "technical", "technolog", "tools")
 
@@ -37,6 +50,8 @@ class CorrelationResult:
     # original text to match against (see _find_skills_block) and so isn't a
     # signal about how reliable the rest of the correlation is.
     match_rate: float = 0.0
+    matched_count: int = 0
+    total_count: int = 0
 
 
 def correlate_profile_to_layout(ranked_profile: dict, layout: ResumeLayoutDocument) -> CorrelationResult:
@@ -49,6 +64,7 @@ def correlate_profile_to_layout(ranked_profile: dict, layout: ResumeLayoutDocume
     def try_match(synthetic_id: str, text: str) -> None:
         nonlocal total, matched
         if not text or not text.strip():
+            logger.debug("correlate: %s skipped — no original text to match against", synthetic_id)
             return
         total += 1
         block, ratio = _best_match(text, all_blocks, used_block_ids)
@@ -56,6 +72,12 @@ def correlate_profile_to_layout(ranked_profile: dict, layout: ResumeLayoutDocume
             block_id_map[synthetic_id] = block.block_id
             used_block_ids.add(block.block_id)
             matched += 1
+            logger.debug("correlate: %s -> %s (ratio=%.2f)", synthetic_id, block.block_id, ratio)
+        else:
+            logger.debug(
+                "correlate: %s did NOT match (best_candidate=%s, best_ratio=%.2f, threshold=%.2f)",
+                synthetic_id, block.block_id if block else None, ratio, _MATCH_THRESHOLD,
+            )
 
     try_match("headline", ranked_profile.get("headline") or "")
     try_match("summary", ranked_profile.get("summary") or "")
@@ -70,9 +92,16 @@ def correlate_profile_to_layout(ranked_profile: dict, layout: ResumeLayoutDocume
     skills_block = _find_skills_block(layout, used_block_ids)
     if skills_block is not None:
         block_id_map["skills"] = skills_block.block_id
+        logger.debug("correlate: skills -> %s", skills_block.block_id)
+    else:
+        logger.debug("correlate: skills did NOT match — no single-block skills section found")
 
     match_rate = (matched / total) if total else 0.0
-    return CorrelationResult(block_id_map=block_id_map, match_rate=match_rate)
+    logger.info(
+        "correlate_profile_to_layout: matched %d/%d correlatable fields (%.0f%%)%s",
+        matched, total, match_rate * 100, "" if total else " (nothing to correlate)",
+    )
+    return CorrelationResult(block_id_map=block_id_map, match_rate=match_rate, matched_count=matched, total_count=total)
 
 
 def _normalize(text: str) -> str:
@@ -114,7 +143,7 @@ def _find_skills_block(layout: ResumeLayoutDocument, used_block_ids: set[str]) -
             continue
         content_blocks = [
             block for block in section.blocks
-            if block.block_id not in used_block_ids and not _is_heading_block(block)
+            if block.block_id not in used_block_ids and not is_heading_block(block)
         ]
         if len(content_blocks) == 1:
             return content_blocks[0]
@@ -125,10 +154,12 @@ def _is_skills_section(section: LayoutSection) -> bool:
     if section.role == SectionRole.SKILLS:
         return True
     heading = section.blocks[0] if section.blocks else None
-    return heading is not None and _is_heading_block(heading) and _mentions_skills(heading.text)
+    return heading is not None and is_heading_block(heading) and _mentions_skills(heading.text)
 
 
-def _is_heading_block(block: TextBlock) -> bool:
+def is_heading_block(block: TextBlock) -> bool:
+    """Public since resume_section_order.py reuses this same style-based
+    heading check to classify docx section headings."""
     style_name = (block.docx_anchor.style_name or "") if block.docx_anchor else ""
     return style_name.lower().startswith("heading") or style_name.lower() == "title"
 

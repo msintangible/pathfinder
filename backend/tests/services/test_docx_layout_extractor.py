@@ -1,8 +1,28 @@
 import io
 
 import docx
+import docx.opc.constants
+import docx.oxml
+from docx.oxml.ns import qn
 
 from services.docx_layout_extractor import extract_docx_layout
+
+
+def _add_hyperlink_run(paragraph, text: str, url: str) -> None:
+    """Appends a real w:hyperlink run (not a plain Run) to paragraph, the way
+    python-docx has no built-in helper for — mirrors how MS Word saves a
+    linked word (e.g. a resume's "GitHub" or portfolio URL)."""
+    part = paragraph.part
+    r_id = part.relate_to(url, docx.opc.constants.RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+    hyperlink = docx.oxml.OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), r_id)
+    run = docx.oxml.OxmlElement("w:r")
+    run.append(docx.oxml.OxmlElement("w:rPr"))
+    t = docx.oxml.OxmlElement("w:t")
+    t.text = text
+    run.append(t)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
 
 
 def _make_docx(paragraphs: list[tuple[str, str | None, dict]]) -> bytes:
@@ -157,3 +177,41 @@ def test_docx_anchor_records_paragraph_index_and_style():
     assert anchor.paragraph_index == 0
     assert anchor.style_name == "Heading 1"
     assert anchor.table_index is None
+
+
+# ---------------------------------------------------------------------------
+# Hyperlink-wrapped runs
+# ---------------------------------------------------------------------------
+
+def test_hyperlink_run_is_captured_with_its_url():
+    document = docx.Document()
+    paragraph = document.add_paragraph("Built APIs for ")
+    _add_hyperlink_run(paragraph, "GitHub", "https://github.com/example")
+    paragraph.add_run(" using Python.")
+    buffer = io.BytesIO()
+    document.save(buffer)
+
+    layout = extract_docx_layout(buffer.getvalue())
+    block = _all_blocks(layout)[0]
+
+    # paragraph.text (used for block.text) already includes hyperlink text —
+    # without iter_run_targets, paragraph.runs would silently drop it and
+    # block.runs would only have 2 entries instead of 3.
+    assert block.text == "Built APIs for GitHub using Python."
+    assert [r.text for r in block.runs] == ["Built APIs for ", "GitHub", " using Python."]
+    assert [r.hyperlink_url for r in block.runs] == [None, "https://github.com/example", None]
+
+
+def test_paragraph_that_is_only_a_hyperlink_is_still_captured():
+    document = docx.Document()
+    paragraph = document.add_paragraph()
+    _add_hyperlink_run(paragraph, "https://myportfolio.dev", "https://myportfolio.dev")
+    buffer = io.BytesIO()
+    document.save(buffer)
+
+    layout = extract_docx_layout(buffer.getvalue())
+    block = _all_blocks(layout)[0]
+
+    assert block.text == "https://myportfolio.dev"
+    assert len(block.runs) == 1
+    assert block.runs[0].hyperlink_url == "https://myportfolio.dev"

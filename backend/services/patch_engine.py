@@ -56,6 +56,9 @@ def apply_patches(document: ResumeLayoutDocument, patches: list[ContentPatch]) -
 
 
 def _redistribute(section: LayoutSection, block: TextBlock, new_text: str) -> list[RunSpan]:
+    if any(run.hyperlink_url is not None for run in block.runs):
+        return _redistribute_pinning_hyperlinks(block.runs, new_text)
+
     if section.role == SectionRole.SKILLS and len(block.runs) > 1:
         separator = _detect_separator(block.text)
         if separator is not None:
@@ -65,6 +68,35 @@ def _redistribute(section: LayoutSection, block: TextBlock, new_text: str) -> li
         return _redistribute_single_run(block.runs, new_text)
 
     return _redistribute_multi_run(block.runs, new_text)
+
+
+def _redistribute_pinning_hyperlinks(runs: list[RunSpan], new_text: str) -> list[RunSpan]:
+    """
+    Hyperlink runs keep their original text untouched; new_text's words are
+    redistributed only across the surrounding non-hyperlink runs.
+
+    python-docx can't see a run wrapped in a w:hyperlink element via
+    paragraph.runs at all (see docx_layout_extractor.iter_run_targets), so a
+    plain word-count redistribution across the block's full run count would
+    leave the hyperlink's original text sitting in the document *alongside*
+    the newly-written wording rather than actually replacing it — this is
+    what keeps a resume's GitHub/LinkedIn/portfolio links attached to
+    unchanged visible text instead.
+    """
+    editable_positions = [i for i, run in enumerate(runs) if run.hyperlink_url is None]
+    if not editable_positions:
+        return list(runs)
+
+    editable_runs = [runs[i] for i in editable_positions]
+    redistributed = (
+        _redistribute_single_run(editable_runs, new_text) if len(editable_runs) <= 1
+        else _redistribute_multi_run(editable_runs, new_text)
+    )
+
+    updated = list(runs)
+    for position, new_run in zip(editable_positions, redistributed):
+        updated[position] = new_run
+    return updated
 
 
 def _redistribute_single_run(runs: list[RunSpan], new_text: str) -> list[RunSpan]:

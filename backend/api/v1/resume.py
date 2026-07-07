@@ -1,3 +1,4 @@
+import logging
 import uuid
 from pathlib import Path
 from uuid import UUID
@@ -23,7 +24,10 @@ from services.repository.profile_repository import ProfileRepository
 from services.repository.resume_repository import ResumeRepository
 from services.resume_generation_agent import ResumeGenerationAgent
 from services.resume_renderer import render_pdf as render_pdf_template
+from services.resume_section_order import infer_section_order
 from services.storage.local_storage import LocalResumeStorage
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -51,20 +55,39 @@ def _render_resume(profile: UserProfile, result: dict) -> tuple[bytes, str, bool
     ResumeGenerationAgent._build_render_layout); otherwise falls back to the
     generic Jinja2/xhtml2pdf template, unconditionally rendered from
     optimized_resume so a low-confidence or missing correlation never blocks
-    generation, it only loses layout preservation for this run.
+    generation, it only loses layout preservation for this run. The fallback
+    still uses profile.layout_document's inferred section order (see
+    resume_section_order.py) even when it can't preserve real formatting.
     """
     if result["layout_preserved"] and profile.source_document_path:
         source_bytes = Path(profile.source_document_path).read_bytes()
         render_layout = ResumeLayoutDocument.model_validate(result["render_layout"])
 
         if profile.source_document_format == "docx":
+            logger.info("profile %s: rendering in place via docx_renderer_v2", profile.id)
             return render_docx(source_bytes, render_layout), "docx", True
 
         if profile.source_document_format == "pdf":
+            logger.info("profile %s: rendering in place via pdf_renderer_v2", profile.id)
             pdf_result = render_pdf_in_place(source_bytes, render_layout)
+            if pdf_result.low_confidence_block_ids:
+                logger.info(
+                    "profile %s: %d block(s) rendered with a substituted font or truncated text: %s",
+                    profile.id, len(pdf_result.low_confidence_block_ids), pdf_result.low_confidence_block_ids,
+                )
             return pdf_result.pdf_bytes, "pdf", True
 
-    return render_pdf_template(result["optimized_resume"]), "pdf", False
+        logger.warning(
+            "profile %s: layout_preserved=True but source_document_format=%r is neither docx nor pdf — falling back",
+            profile.id, profile.source_document_format,
+        )
+    elif not profile.source_document_path:
+        logger.info("profile %s: no source document — falling back to the generic template", profile.id)
+    else:
+        logger.info("profile %s: layout correlation wasn't confident enough this run — falling back", profile.id)
+
+    section_order = infer_section_order(profile.layout_document)
+    return render_pdf_template(result["optimized_resume"], section_order=section_order), "pdf", False
 
 
 @router.post("/generate", response_model=ResumeGenerationResponse)

@@ -31,6 +31,13 @@ class RunSpan(BaseModel):
     underline: bool = False
     font_name: str | None = None
     font_size: float | None = None
+    # Set when this run is wrapped in a w:hyperlink element (docx only).
+    # python-docx's paragraph.runs silently excludes hyperlink-wrapped runs,
+    # so docx_layout_extractor.iter_run_targets() walks paragraph content
+    # directly instead — see that function's docstring. patch_engine.py pins
+    # any run with a hyperlink_url to its original text rather than rewriting
+    # it, since python-docx can't recreate a w:hyperlink relationship here.
+    hyperlink_url: str | None = None
 
 
 class DocxAnchor(BaseModel):

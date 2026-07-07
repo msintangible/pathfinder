@@ -19,7 +19,9 @@ import zipfile
 
 from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
+from docx.text.hyperlink import Hyperlink
 from docx.text.paragraph import Paragraph
+from docx.text.run import Run
 
 from schemas.resume_layout import DocxAnchor, LayoutSection, ResumeLayoutDocument, RunSpan, TextBlock
 
@@ -37,11 +39,34 @@ def _is_bullet_style(style_name: str | None) -> bool:
     return bool(style_name) and "list" in style_name.lower()
 
 
+def iter_run_targets(paragraph: Paragraph) -> list[tuple[Run, str | None]]:
+    """
+    Flattens a paragraph's inner content into (run, hyperlink_url) pairs, in
+    document order, skipping empty-text runs.
+
+    python-docx's paragraph.runs property silently excludes any run wrapped
+    in a w:hyperlink element (e.g. a linked "GitHub" or portfolio URL) — used
+    directly, that would make hyperlinked text invisible to both extraction
+    and rendering, leaving its original text sitting untouched in the
+    document alongside newly-written text for the rest of the block instead
+    of actually being accounted for. docx_renderer_v2.py reuses this same
+    helper (rather than paragraph.runs) so run positions always line up
+    between reading and writing.
+    """
+    targets: list[tuple[Run, str | None]] = []
+    for item in paragraph.iter_inner_content():
+        if isinstance(item, Hyperlink):
+            for run in item.runs:
+                if run.text:
+                    targets.append((run, item.address))
+        elif item.text:
+            targets.append((item, None))
+    return targets
+
+
 def _run_spans(paragraph: Paragraph) -> list[RunSpan]:
     spans = []
-    for run in paragraph.runs:
-        if not run.text:
-            continue
+    for run, hyperlink_url in iter_run_targets(paragraph):
         spans.append(RunSpan(
             text=run.text,
             bold=bool(run.bold),
@@ -49,6 +74,7 @@ def _run_spans(paragraph: Paragraph) -> list[RunSpan]:
             underline=bool(run.underline),
             font_name=run.font.name,
             font_size=run.font.size.pt if run.font.size else None,
+            hyperlink_url=hyperlink_url,
         ))
     return spans
 

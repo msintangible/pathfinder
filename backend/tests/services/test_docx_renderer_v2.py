@@ -1,11 +1,32 @@
 import io
 
 import docx
+import docx.opc.constants
+import docx.oxml
 import pytest
+from docx.oxml.ns import qn
 
 from services.docx_layout_extractor import extract_docx_layout
 from services.docx_renderer_v2 import DocxRenderError, render_docx
-from schemas.resume_layout import ResumeLayoutDocument
+from services.patch_engine import apply_patches
+from schemas.resume_layout import ContentPatch, ResumeLayoutDocument
+
+
+def _add_hyperlink_run(paragraph, text: str, url: str) -> None:
+    """Appends a real w:hyperlink run (not a plain Run) to paragraph — mirrors
+    how MS Word saves a linked word (e.g. a resume's "GitHub" or portfolio
+    URL), which python-docx has no built-in helper for."""
+    part = paragraph.part
+    r_id = part.relate_to(url, docx.opc.constants.RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+    hyperlink = docx.oxml.OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), r_id)
+    run = docx.oxml.OxmlElement("w:r")
+    run.append(docx.oxml.OxmlElement("w:rPr"))
+    t = docx.oxml.OxmlElement("w:t")
+    t.text = text
+    run.append(t)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
 
 
 def _save(document: docx.Document) -> bytes:
@@ -157,6 +178,56 @@ def test_run_count_mismatch_falls_back_to_writing_first_run():
 
     assert result_runs[0].text == "Completely rewritten bullet."
     assert result_runs[1].text == ""
+
+
+def test_hyperlink_text_is_not_duplicated_when_the_surrounding_bullet_is_rewritten():
+    document = docx.Document()
+    paragraph = document.add_paragraph()
+    paragraph.add_run("Built APIs for ")
+    _add_hyperlink_run(paragraph, "GitHub", "https://github.com/example")
+    paragraph.add_run(" using Python.")
+    source_bytes = _save(document)
+
+    layout = extract_docx_layout(source_bytes)
+    patch_result = apply_patches(
+        layout, [ContentPatch(block_id="paragraph[0]", new_text="Engineered RESTful APIs using Python and AWS.")]
+    )
+
+    rendered = render_docx(source_bytes, patch_result.document)
+    result_paragraph = _reopen(rendered).paragraphs[0]
+
+    # The hyperlink's own text ("GitHub") must appear exactly once — before
+    # this fix, paragraph.runs was blind to the hyperlink-wrapped run, so the
+    # rewrite landed in the surrounding runs while "GitHub" stayed behind
+    # untouched, duplicating content instead of replacing it. The pinned
+    # hyperlink text still sits at its original position (making the wording
+    # around it grammatically seamless is a prompt-level concern, not this
+    # mechanical fix's job) — so the new wording surrounds it unchanged.
+    assert result_paragraph.text.count("GitHub") == 1
+    non_hyperlink_words = result_paragraph.text.replace("GitHub", " ").split()
+    assert non_hyperlink_words == "Engineered RESTful APIs using Python and AWS.".split()
+
+
+def test_hyperlink_relationship_survives_the_rewrite():
+    document = docx.Document()
+    paragraph = document.add_paragraph()
+    paragraph.add_run("Built APIs for ")
+    _add_hyperlink_run(paragraph, "GitHub", "https://github.com/example")
+    paragraph.add_run(" using Python.")
+    source_bytes = _save(document)
+
+    layout = extract_docx_layout(source_bytes)
+    patch_result = apply_patches(
+        layout, [ContentPatch(block_id="paragraph[0]", new_text="Engineered RESTful APIs using Python and AWS.")]
+    )
+
+    rendered = render_docx(source_bytes, patch_result.document)
+    result_paragraph = _reopen(rendered).paragraphs[0]
+
+    hyperlinks = [item for item in result_paragraph.iter_inner_content() if hasattr(item, "address")]
+    assert len(hyperlinks) == 1
+    assert hyperlinks[0].address == "https://github.com/example"
+    assert hyperlinks[0].text == "GitHub"
 
 
 def test_rejects_non_docx_layout():

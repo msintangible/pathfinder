@@ -24,6 +24,7 @@ from docx.text.paragraph import Paragraph
 from docx.text.run import Run
 
 from schemas.resume_layout import DocxAnchor, ResumeLayoutDocument, RunSpan
+from services.docx_layout_extractor import iter_run_targets
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def render_docx(original_bytes: bytes, layout: ResumeLayoutDocument) -> bytes:
             if block.docx_anchor is None:
                 continue
             paragraph = _resolve_paragraph(document, block.docx_anchor)
-            _write_runs(paragraph.runs, block.runs)
+            _write_runs(paragraph, block.runs)
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -56,17 +57,19 @@ def _resolve_paragraph(document: Document, anchor: DocxAnchor) -> Paragraph:
     return document.paragraphs[anchor.paragraph_index]
 
 
-def _write_runs(real_runs: list[Run], patched_runs: list[RunSpan]) -> None:
+def _write_runs(paragraph: Paragraph, patched_runs: list[RunSpan]) -> None:
     """
-    Write patched_runs' text into real_runs, in order.
+    Write patched_runs' text into paragraph's real runs, in order.
 
-    docx_layout_extractor.py only records runs with non-empty original text
-    (see its _run_spans), so real_runs may contain extra empty-text runs
-    interleaved with the ones patched_runs corresponds to — filter down to
-    the same non-empty subset before zipping, or a stray empty run would
-    throw every later run out of alignment.
+    Uses iter_run_targets (shared with docx_layout_extractor.py) instead of
+    paragraph.runs — paragraph.runs silently excludes runs wrapped in a
+    w:hyperlink element, which would otherwise leave a hyperlink's original
+    text untouched in the document while the rest of the block's new text is
+    written around it. patch_engine.py pins hyperlink RunSpans to their
+    original text, so writing them back here is a harmless no-op — it's what
+    keeps the hyperlink attached to unchanged visible text.
     """
-    targets = [run for run in real_runs if run.text]
+    targets = [run for run, _ in iter_run_targets(paragraph)]
 
     if len(targets) != len(patched_runs):
         logger.warning(
@@ -74,16 +77,16 @@ def _write_runs(real_runs: list[Run], patched_runs: list[RunSpan]) -> None:
             "falling back to writing combined text into the first run",
             len(targets), len(patched_runs),
         )
-        _write_fallback(real_runs, patched_runs)
+        _write_fallback(targets, patched_runs)
         return
 
     for target, patched in zip(targets, patched_runs):
         target.text = patched.text
 
 
-def _write_fallback(real_runs: list[Run], patched_runs: list[RunSpan]) -> None:
-    if not real_runs:
+def _write_fallback(targets: list[Run], patched_runs: list[RunSpan]) -> None:
+    if not targets:
         return
-    real_runs[0].text = "".join(patched.text for patched in patched_runs)
-    for run in real_runs[1:]:
+    targets[0].text = "".join(patched.text for patched in patched_runs)
+    for run in targets[1:]:
         run.text = ""
