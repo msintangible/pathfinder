@@ -2,14 +2,14 @@
  * DOM tests for src/content/scrape.js using jsdom.
  *
  * scrape.js is a content script (plain script, no exports) that relies on
- * browser globals (document, location, DOMParser, TreeWalker, getComputedStyle,
- * NodeFilter, Node). We load it into a jsdom window per fixture and call
- * scrapePage().
+ * browser globals (document, location, DOMParser, getComputedStyle, Node).
+ * We load it into a jsdom window per fixture and call scrapePage().
  *
  * Note on jsdom: it does not implement HTMLElement.innerText, so scrape.js
  * falls back to textContent in the scorer — these tests therefore exercise the
- * structural logic (JSON-LD parsing, TreeWalker text extraction, noise/hidden
- * removal, container selection, truncation) rather than visual rendering.
+ * structural logic (JSON-LD parsing, shadow-DOM-aware text extraction,
+ * noise/hidden removal, container selection, truncation) rather than visual
+ * rendering.
  *
  * Run with: npm test
  */
@@ -20,28 +20,38 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// scrape.js calls collectJsonLdNodesByType(), declared in jsonld.js, which
-// manifest.json loads first into the same content-script global scope —
-// concatenate the two here to mirror that load order.
+// scrape.js calls collectJsonLdNodesByType() (jsonld.js) and
+// querySelectorAllDeep() (dom.js), both loaded before it into the same
+// content-script global scope by manifest.json — concatenate all three here
+// to mirror that load order.
+const DOM_SRC = fs.readFileSync(path.join(__dirname, "../src/content/dom.js"), "utf8");
 const JSONLD_SRC = fs.readFileSync(path.join(__dirname, "../src/content/jsonld.js"), "utf8");
-const SRC = JSONLD_SRC + "\n" + fs.readFileSync(path.join(__dirname, "../src/content/scrape.js"), "utf8");
+const SRC = DOM_SRC + "\n" + JSONLD_SRC + "\n" + fs.readFileSync(path.join(__dirname, "../src/content/scrape.js"), "utf8");
 
-/** Load scrape.js against an HTML fixture and return scrapePage(). */
-function makeScraper(html, url = "https://example.com/job/123") {
+/**
+ * Load scrape.js against an HTML fixture and return scrapePage(). `setup`,
+ * if given, runs against the parsed document before scrapePage is built —
+ * used to attach real shadow roots, which static HTML markup can't declare.
+ */
+function makeScraper(html, url = "https://example.com/job/123", setup) {
   const dom = new JSDOM(html, { url });
   const { window } = dom;
+  if (setup) setup(window.document);
   const factory = new Function(
-    "document", "location", "getComputedStyle", "DOMParser", "NodeFilter", "Node",
-    `${SRC}\nreturn scrapePage;`
+    "document", "location", "getComputedStyle", "DOMParser", "Node",
+    `${SRC}\nreturn { scrapePage, CONTENT_SELECTOR_OVERRIDES };`
   );
-  return factory(
+  const { scrapePage, CONTENT_SELECTOR_OVERRIDES } = factory(
     window.document,
     window.location,
     window.getComputedStyle.bind(window),
     window.DOMParser,
-    window.NodeFilter,
     window.Node
   );
+  // Test-only escape hatch: lets override-map tests push a temporary entry
+  // without touching the (deliberately empty-by-default) production array.
+  scrapePage.overrides = CONTENT_SELECTOR_OVERRIDES;
+  return scrapePage;
 }
 
 // --- tiny test runner -------------------------------------------------------
@@ -203,6 +213,110 @@ test("lowConfidence: false for a real job-shaped extraction", () => {
     <body><main class="job-description"><p>${body}</p></main></body></html>`);
   const r = scrape();
   assert(r.lowConfidence === false, `expected false, length=${r.length}`);
+});
+
+// ---------------------------------------------------------------------------
+// 8. Shadow DOM traversal
+// ---------------------------------------------------------------------------
+test("shadow DOM: extracts job text rendered inside an open shadow root", () => {
+  const jobText = "We are looking for a backend engineer with 5+ years of experience. ".repeat(6) +
+    "Responsibilities include owning the payments pipeline. Remote and hybrid welcome. Full-time with great benefits.";
+  const scrape = makeScraper(
+    `<!doctype html><html><head><title>Job</title></head>
+      <body><job-widget></job-widget></body></html>`,
+    "https://acme.com/careers/1",
+    (document) => {
+      const host = document.querySelector("job-widget");
+      const shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML = `<div class="job-description"><p>${jobText}</p></div>`;
+    }
+  );
+  const r = scrape();
+  assert(r.source === "readable", `source: ${r.source}`);
+  assert(r.text.includes("payments pipeline"), `text missing shadow content: ${r.text.slice(0, 80)}`);
+  assert(r.lowConfidence === false, "shadow-DOM job text should pass the quality floor");
+});
+
+test("shadow DOM: descends into a nested shadow root inside the picked container", () => {
+  const jobText = "We are looking for a backend engineer with 5+ years of experience. ".repeat(6) +
+    "Responsibilities include owning the payments pipeline. Remote and hybrid welcome. Full-time with great benefits.";
+  const scrape = makeScraper(
+    `<!doctype html><html><head><title>Job</title></head>
+      <body><main class="job-description"><p>Intro paragraph long enough to score, padded padded padded padded padded padded.</p><inner-widget></inner-widget></main></body></html>`,
+    "https://acme.com/careers/1",
+    (document) => {
+      const host = document.querySelector("inner-widget");
+      const shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML = `<p>${jobText}</p>`;
+    }
+  );
+  const r = scrape();
+  assert(r.text.includes("payments pipeline"), `nested shadow content missing: ${r.text.slice(0, 80)}`);
+});
+
+test("shadow DOM: noise selectors are still respected inside a shadow root", () => {
+  const jobText = "We are looking for a backend engineer with 5+ years of experience. ".repeat(6) +
+    "Responsibilities include owning the payments pipeline. Remote and hybrid welcome. Full-time with great benefits.";
+  const scrape = makeScraper(
+    `<!doctype html><html><head><title>Job</title></head>
+      <body><job-widget></job-widget></body></html>`,
+    "https://acme.com/careers/1",
+    (document) => {
+      const host = document.querySelector("job-widget");
+      const shadow = host.attachShadow({ mode: "open" });
+      shadow.innerHTML =
+        `<nav>Home About Contact</nav><div class="job-description"><p>${jobText}</p></div>`;
+    }
+  );
+  const r = scrape();
+  assert(!r.text.includes("Home About Contact"), `nav content should be stripped: ${r.text.slice(0, 120)}`);
+  assert(r.text.includes("payments pipeline"), "job text should still be present");
+});
+
+// ---------------------------------------------------------------------------
+// 9. Content-selector override map (escape hatch, see scrape.js's
+//    CONTENT_SELECTOR_OVERRIDES)
+// ---------------------------------------------------------------------------
+test("override map: a URL-matched override reaches a container the generic selectors can't see", () => {
+  const jobText = "We are looking for a backend engineer with 5+ years of experience. ".repeat(4) +
+    "Responsibilities include owning the payments pipeline.";
+  // Deliberately long filler so it wins on text-length scoring if it's the
+  // only candidate the generic CONTENT_SELECTORS heuristics can find.
+  const decoyText = "Generic filler content that is much longer than the real job body. ".repeat(10);
+  const html = `<!doctype html><html><head><title>Job</title></head>
+    <body>
+      <div class="content"><p>${decoyText}</p></div>
+      <div id="job-body"><p>${jobText}</p></div>
+    </body></html>`;
+  const scrape = makeScraper(html, "https://weird-ats.example.com/postings/42");
+
+  // Sanity check: #job-body matches none of CONTENT_SELECTORS, so without an
+  // override the generic pass only ever finds the decoy.
+  const withoutOverride = scrape();
+  assert(withoutOverride.text.includes("Generic filler"), "expected the decoy to win without an override");
+
+  scrape.overrides.push({ pattern: /weird-ats\.example\.com\/postings\//, selector: "#job-body" });
+  const withOverride = scrape();
+  assert(withOverride.text.includes("payments pipeline"), `override should pick #job-body: ${withOverride.text.slice(0, 80)}`);
+  assert(!withOverride.text.includes("Generic filler"), "override should not fall back to the decoy");
+});
+
+test("override map: a non-matching pattern is ignored, generic heuristics still run", () => {
+  const html = `<!doctype html><html><head><title>Job</title></head>
+    <body><div class="content"><p>${"Generic filler content. ".repeat(20)}</p></div></body></html>`;
+  const scrape = makeScraper(html, "https://acme.com/careers/1");
+  scrape.overrides.push({ pattern: /this-domain-is-not-in-the-url\.example/, selector: "#job-body" });
+  const r = scrape();
+  assert(r.text.includes("Generic filler"), "non-matching override must not block the generic fallback");
+});
+
+test("override map: a matched pattern whose selector finds nothing falls back to generic heuristics", () => {
+  const html = `<!doctype html><html><head><title>Job</title></head>
+    <body><div class="content"><p>${"Generic filler content. ".repeat(20)}</p></div></body></html>`;
+  const scrape = makeScraper(html, "https://weird-ats.example.com/postings/99");
+  scrape.overrides.push({ pattern: /weird-ats\.example\.com\/postings\//, selector: "#does-not-exist" });
+  const r = scrape();
+  assert(r.text.includes("Generic filler"), "an override match with no DOM hits should fall back, not return empty");
 });
 
 // ---------------------------------------------------------------------------

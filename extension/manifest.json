@@ -25,6 +25,7 @@
     {
       "matches": ["<all_urls>"],
       "js": [
+        "src/content/dom.js",
         "src/content/jsonld.js",
         "src/content/detect.js",
         "src/content/scrape.js",

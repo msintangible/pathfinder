@@ -1,0 +1,31 @@
+name: Extension tests
+
+# Scoped to extension/** so backend-only changes don't trigger this — the
+# extension and backend are owned/tested independently.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extension/**"
+      - ".github/workflows/extension-tests.yml"
+  pull_request:
+    paths:
+      - "extension/**"
+      - ".github/workflows/extension-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # No package-lock.json is committed (extension/.gitignore) — the
+      # extension ships as plain JS with no build step; node_modules exists
+      # solely to run these tests. `npm install` rather than `npm ci`.
+      - run: npm install
+      - run: npm test

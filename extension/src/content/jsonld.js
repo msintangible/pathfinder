@@ -8,9 +8,10 @@
  * by scraping. One traversal, used by both, removes that divergence risk.
  *
  * Loaded before detect.js and scrape.js in manifest.json's content_scripts
- * array. Content scripts share one global scope per injection (no module
- * system), so this declares a plain global function like the rest of the
- * pipeline — not an ES export.
+ * array (after dom.js, which this depends on for shadow-root-aware
+ * querying). Content scripts share one global scope per injection (no
+ * module system), so this declares a plain global function like the rest of
+ * the pipeline — not an ES export.
  */
 
 /**
@@ -20,7 +21,7 @@
  */
 function collectJsonLdNodesByType(typeName) {
   const results = [];
-  for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
+  for (const el of querySelectorAllDeep(document, 'script[type="application/ld+json"]')) {
     let json;
     try {
       json = JSON.parse(el.textContent || "");
