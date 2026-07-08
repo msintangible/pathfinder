@@ -105,7 +105,7 @@ async def test_returns_full_pipeline_output_shape(mock_genai):
     result = await ResumeGenerationAgent().generate(_PROFILE, _JOB)
 
     assert set(result.keys()) == {
-        "ats_score", "matched_keywords", "missing_keywords", "optimized_resume",
+        "ats_score", "matched_keywords", "missing_keywords", "added_keywords", "optimized_resume",
         "patches", "render_layout", "layout_preserved",
     }
     assert result["optimized_resume"] == _EXPECTED_OPTIMIZED_RESUME

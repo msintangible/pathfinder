@@ -176,6 +176,39 @@ await test("generate success: renders ATS score, keywords, changes, and Open Res
   );
 });
 
+await test("generate success with added_keywords: renders Added section, excludes them from Missing", async () => {
+  const generateResult = {
+    ok: true,
+    data: {
+      ats_score: 82.4,
+      matched_keywords: ["Python"],
+      missing_keywords: ["Kubernetes", "Terraform"],
+      added_keywords: ["Kubernetes"],
+      optimized_resume: { changes_summary: [] },
+      download_url: "/v1/resumes/abc/download",
+    },
+  };
+  const { root } = await mountController({ profileId: "p1", jobAnalysis: job, generateResult });
+
+  root.querySelector("#optimize-cv").click();
+  await flush();
+
+  const addedPills = Array.from(root.querySelectorAll(".badge--warn")).map((b) => b.textContent);
+  assert(addedPills.length === 1 && addedPills[0] === "Kubernetes", `added pills: ${addedPills}`);
+
+  const missingPills = Array.from(root.querySelectorAll(".badge--err")).map((b) => b.textContent);
+  assert(missingPills.length === 1 && missingPills[0] === "Terraform", `missing pills: ${missingPills}`);
+
+  // Keyword sections must precede the ATS score in document order.
+  const resultEl = root.querySelector("#optimize-result");
+  const children = Array.from(resultEl.children);
+  const addedIndex = children.findIndex(
+    (el) => el.classList.contains("opt-keywords") && el.querySelector(".opt-keywords-heading")?.textContent === "Added to your CV"
+  );
+  const scoreIndex = children.findIndex((el) => el.classList.contains("opt-score"));
+  assert(addedIndex !== -1 && scoreIndex !== -1 && addedIndex < scoreIndex, "keyword section renders before the ATS score");
+});
+
 await test("generate failure: shows GENERATE_FAILED, re-enables button, no result", async () => {
   const generateResult = { ok: false, error: "HTTP 500: boom" };
   const { root } = await mountController({ profileId: "p1", jobAnalysis: job, generateResult });

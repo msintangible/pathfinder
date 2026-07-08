@@ -39,6 +39,7 @@ _GENERATION_RESULT = {
     },
     "matched_keywords": ["python"],
     "missing_keywords": [],
+    "added_keywords": [],
     "ats_score": 87.5,
     "patches": [],
     "render_layout": None,

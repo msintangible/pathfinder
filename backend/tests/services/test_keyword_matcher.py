@@ -1,4 +1,4 @@
-from services.keyword_matcher import match_keywords
+from services.keyword_matcher import find_added_keywords, match_keywords
 
 
 def test_matches_case_insensitively():
@@ -93,3 +93,53 @@ def test_nested_sections_missing_or_empty_are_handled_gracefully():
 
     assert report.matched == []
     assert report.missing == ["Rust"]
+
+
+# ---------------------------------------------------------------------------
+# find_added_keywords
+# ---------------------------------------------------------------------------
+
+def test_finds_a_missing_keyword_woven_into_a_bullet():
+    optimized_resume = {
+        "experience": [{"bullets": ["Researched AWS Lambda and API Gateway for scalability decisions."]}],
+    }
+
+    added = find_added_keywords(["Lambda", "Terraform"], optimized_resume)
+
+    assert added == ["Lambda"]
+
+
+def test_finds_a_missing_keyword_in_summary_or_skills():
+    optimized_resume = {"summary": "Experienced with Kubernetes clusters.", "skills": ["Python", "Docker"]}
+
+    added = find_added_keywords(["Kubernetes", "Docker", "Rust"], optimized_resume)
+
+    assert set(added) == {"Kubernetes", "Docker"}
+
+
+def test_finds_a_missing_keyword_in_a_project_description_or_technologies():
+    optimized_resume = {"projects": [{"description": "Built with Terraform.", "technologies": ["AWS"]}]}
+
+    added = find_added_keywords(["Terraform", "AWS", "GCP"], optimized_resume)
+
+    assert set(added) == {"Terraform", "AWS"}
+
+
+def test_matching_is_case_insensitive():
+    optimized_resume = {"summary": "Experience with kubernetes."}
+
+    added = find_added_keywords(["Kubernetes"], optimized_resume)
+
+    assert added == ["Kubernetes"]
+
+
+def test_keyword_not_present_anywhere_is_not_added():
+    optimized_resume = {"summary": "Backend engineer.", "skills": ["Python"]}
+
+    added = find_added_keywords(["Terraform"], optimized_resume)
+
+    assert added == []
+
+
+def test_empty_optimized_resume_adds_nothing():
+    assert find_added_keywords(["Terraform"], {}) == []

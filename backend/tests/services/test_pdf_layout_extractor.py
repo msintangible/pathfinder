@@ -96,3 +96,46 @@ def test_blank_page_produces_no_section():
 def test_invalid_pdf_bytes_raise_extraction_error():
     with pytest.raises(PdfLayoutExtractionError):
         extract_pdf_layout(b"not a pdf")
+
+
+# ---------------------------------------------------------------------------
+# Wrapped bullets — one block per paragraph, not one per visual line
+# ---------------------------------------------------------------------------
+
+def _make_wrapped_pdf(text: str, width: float = 195.0) -> bytes:
+    """A single bullet whose text wraps across multiple visual lines within
+    one rectangle, the way a real resume bullet does — mirrors how a real
+    PDF's word-processor-produced paragraph flows, unlike _make_pdf's
+    independently-positioned single lines."""
+    document = fitz.open()
+    page = document.new_page()
+    rect = fitz.Rect(72, 100, 72 + width, 200)
+    page.insert_textbox(rect, text, fontsize=11)
+    buffer = document.tobytes()
+    document.close()
+    return buffer
+
+
+def test_wrapped_bullet_becomes_a_single_block_not_one_per_line():
+    text = "Developed and deployed new ASP.NET backend and React TypeScript frontend features using Redux."
+    source = _make_wrapped_pdf(text)
+
+    layout = extract_pdf_layout(source)
+    blocks = _all_blocks(layout)
+
+    assert len(blocks) == 1
+    assert blocks[0].text == text
+    assert blocks[0].block_id == "page[0].block[0]"
+
+
+def test_wrapped_bullet_anchor_spans_the_full_multi_line_height():
+    text = "Developed and deployed new ASP.NET backend and React TypeScript frontend features using Redux."
+    source = _make_wrapped_pdf(text)
+
+    layout = extract_pdf_layout(source)
+    anchor = _all_blocks(layout)[0].pdf_anchor
+
+    # The wrapped text wraps across 3 lines at this width — the anchor must
+    # cover all of them, not just the first line, or a rewrite can only ever
+    # be placed on one line while the others keep their original text.
+    assert anchor.y1 - anchor.y0 > 30

@@ -44,6 +44,9 @@ class ResumeVersion(Base, PrimaryKeyMixin):
     # Keyword match report (job skills/technologies/keywords vs. profile), set by ResumeGenerationAgent
     matched_keywords: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # [str]
     missing_keywords: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # [str]
+    # Subset of missing_keywords the optimization actually wove into the
+    # resume's wording — see services/keyword_matcher.py::find_added_keywords.
+    added_keywords: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # [str]
 
     # ATS keyword match score (0–100), set by ATS Optimisation Agent
     ats_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)

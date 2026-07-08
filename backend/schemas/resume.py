@@ -60,6 +60,12 @@ class ResumeGenerationResponse(BaseModel):
     ats_score: float
     matched_keywords: list[str]
     missing_keywords: list[str]
+    # Which missing_keywords the optimization actually wove into the resume's
+    # wording — see services/keyword_matcher.py::find_added_keywords. A
+    # subset of missing_keywords, not a fourth independent category: still
+    # "missing" from the candidate's structured profile skill lists, but now
+    # truthfully present in the rendered text.
+    added_keywords: list[str] = []
     optimized_resume: OptimizedResume
     download_url: str
     # True when the candidate's own uploaded docx/pdf was edited in place

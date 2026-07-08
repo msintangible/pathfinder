@@ -10,7 +10,7 @@ from google.genai import types
 from schemas.resume import OptimizationPatchResponse
 from schemas.resume_layout import ContentPatch, ResumeLayoutDocument
 from services.ats_scorer import compute_ats
-from services.keyword_matcher import KeywordReport, match_keywords
+from services.keyword_matcher import KeywordReport, find_added_keywords, match_keywords
 from services.llm_output import parse_llm_json
 from services.patch_engine import apply_patches
 from services.profile_layout_correlator import correlate_profile_to_layout
@@ -51,10 +51,25 @@ sentence and tack a new one onto it.
   Bad:  "Built APIs. Built RESTful APIs using ASP.NET Core and SQL Server."
   Good: "Built RESTful APIs using ASP.NET Core and SQL Server."
 
-Editing philosophy: every edit must have a reason. An unchanged block is
-better than an unnecessary rewrite. Before touching each block, ask "does
-this already communicate the point, in language the job posting would
-recognize?" — if yes, return it unchanged (new_text identical to text).
+Editing philosophy: every edit must have a reason, but "the job posting
+barely overlaps with this bullet as written" is itself a reason — don't
+default to leaving a block unchanged just because it's already coherent.
+Before touching each block, ask "does this already communicate the point in
+language *this specific job posting* would recognize, or is there a genuine,
+truthful angle from the candidate's real experience this block is currently
+missing?" Apply that question to every single editable block, not just the
+ones that obviously need it — summary and skills included. Only when the
+honest answer is "there's truly nothing more to add without stretching the
+truth" should a block come back unchanged.
+
+candidate_profile.github_repositories is real, verifiable experience —
+treat it the same as work_experience or projects for sourcing truthful
+detail, not just as background reading. If a repo's languages/technologies/
+description support a matched_keyword or missing_keyword that isn't yet
+reflected anywhere in editable_blocks, look for a genuine place to surface
+it (the summary, the skills compilation, or a project bullet whose subject
+matter it's actually related to) — never invent a new project entry for it,
+since you can only edit the blocks you were given, not add new ones.
 
 Priority order — resolve conflicts between these in this order:
 1. Never invent. No skill, employer, title, date, technology, or achievement
@@ -83,16 +98,24 @@ Section rules:
 - summary: rewrite freely to target the role.
 - skills: write a single comma-separated list compiled from
   candidate_profile's technical_skills, programming_languages, frameworks,
-  libraries, databases, cloud_platforms, devops_tools, ai_ml_tools, and
-  development_tools — reordered to prioritize whatever's relevant to this
-  job. Every item must already exist in one of those lists; never add or
+  libraries, databases, cloud_platforms, devops_tools, ai_ml_tools,
+  development_tools, and the languages/technologies used across
+  github_repositories — reordered to prioritize whatever's relevant to this
+  job. Every item must already exist in one of those sources; never add or
   drop a genuine skill.
 - experience bullets: wording only. Keep each bullet roughly its original
   length — expand only as far as a genuinely supported keyword requires, and
   never enough to noticeably lengthen the overall document.
 - projects: description and technologies may be reworded/surfaced the same
   way as experience bullets; entry order is decided upstream, not by you.
-- changes_summary: write 2-5 lines (one per line), and every line must cover
+- changes_summary: write one line per block you actually changed — never a
+  line for a block you left alone, and never fewer lines than the number of
+  blocks you changed. Do not artificially limit yourself: if this job has
+  substantial gaps against missing_keywords/required_skills, thoroughly
+  applying the editing philosophy above across every block (including
+  summary, skills, and every bullet) should typically surface 10 or more
+  genuine changes, not 2-3 — a short list is a sign you stopped looking too
+  early, not a sign the resume was already perfect. Every line must cover
   all three of:
   (1) WHERE — the real section/entry, named the way the candidate would
       recognize it (e.g. "your FluxPro internship bullet about JWT
@@ -145,12 +168,14 @@ class ResumeGenerationAgent:
 
         optimized_resume = flatten_layout_to_resume(ranked.profile, patch_result.document)
         ats_score = compute_ats(keyword_report)
+        added_keywords = find_added_keywords(keyword_report.missing, optimized_resume)
         render_layout, layout_preserved = self._build_render_layout(ranked.profile, layout_document, patches)
 
         return {
             "ats_score": ats_score,
             "matched_keywords": keyword_report.matched,
             "missing_keywords": keyword_report.missing,
+            "added_keywords": added_keywords,
             "optimized_resume": optimized_resume,
             "patches": [patch.model_dump() for patch in patches],
             "render_layout": render_layout,

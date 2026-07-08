@@ -2,11 +2,22 @@
 Builds a ResumeLayoutDocument from an uploaded PDF file.
 
 PDF has no semantic structure — only positioned glyphs — so extraction here
-is purely coordinate-based (line-level spans, in PyMuPDF's own reading
-order). Section role labeling (SUMMARY, SKILLS, WORK_EXPERIENCE_ENTRY, etc.)
-requires visual/semantic understanding that coordinates alone can't provide;
-that's gemini_vision_layout_agent.py's job, not this module's. Every section
+is purely coordinate-based, in PyMuPDF's own reading order. Section role
+labeling (SUMMARY, SKILLS, WORK_EXPERIENCE_ENTRY, etc.) requires visual/
+semantic understanding that coordinates alone can't provide; that's
+gemini_vision_layout_agent.py's job, not this module's. Every section
 produced here is left with the default role=OTHER.
+
+One TextBlock is built per PyMuPDF *block* (get_text("dict")'s own paragraph
+grouping), not per line: a single wrapped bullet spans multiple lines but is
+one logical sentence, and profile_layout_correlator.py only ever has one
+whole rewritten sentence to place. Splitting per line meant that sentence
+could only ever land on one of the bullet's several lines — cramming the
+whole rewrite into that one line's original (narrow) width, while the
+bullet's other lines kept their un-patched original text right next to it.
+pdf_renderer_v2.py takes the corresponding fix on the write side (rendering
+into a block's full multi-line rect via insert_textbox instead of a single
+insert_text point).
 """
 
 import fitz
@@ -39,19 +50,21 @@ def _run_spans(spans: list[dict]) -> list[RunSpan]:
     return runs
 
 
-def _line_block(page_number: int, block_index: int, line_index: int, line: dict) -> TextBlock | None:
-    spans = line.get("spans", [])
-    text = "".join(span.get("text", "") for span in spans).strip()
+def _paragraph_block(page_number: int, block_index: int, block: dict) -> TextBlock | None:
+    lines = block.get("lines", [])
+    line_texts = ["".join(span.get("text", "") for span in line.get("spans", [])).strip() for line in lines]
+    text = " ".join(t for t in line_texts if t)
     if not text:
         return None
 
-    x0, y0, x1, y1 = line.get("bbox", (0.0, 0.0, 0.0, 0.0))
-    first_span = spans[0] if spans else {}
+    all_spans = [span for line in lines for span in line.get("spans", []) if span.get("text", "")]
+    x0, y0, x1, y1 = block.get("bbox", (0.0, 0.0, 0.0, 0.0))
+    first_span = all_spans[0] if all_spans else {}
     return TextBlock(
-        block_id=f"page[{page_number}].block[{block_index}].line[{line_index}]",
+        block_id=f"page[{page_number}].block[{block_index}]",
         kind="paragraph",
         text=text,
-        runs=_run_spans(spans),
+        runs=_run_spans(all_spans),
         pdf_anchor=PdfAnchor(
             page_number=page_number, x0=x0, y0=y0, x1=x1, y1=y1,
             font_name=first_span.get("font"), font_size=first_span.get("size"),
@@ -73,10 +86,9 @@ def extract_pdf_layout(pdf_bytes: bytes) -> ResumeLayoutDocument:
             for block_index, block in enumerate(page_dict.get("blocks", [])):
                 if block.get("type") != 0:  # skip images/non-text blocks
                     continue
-                for line_index, line in enumerate(block.get("lines", [])):
-                    text_block = _line_block(page_number, block_index, line_index, line)
-                    if text_block is not None:
-                        section.blocks.append(text_block)
+                text_block = _paragraph_block(page_number, block_index, block)
+                if text_block is not None:
+                    section.blocks.append(text_block)
             if section.blocks:
                 sections.append(section)
     finally:

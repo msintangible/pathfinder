@@ -84,21 +84,31 @@ async function openResume(downloadUrl) {
   chrome.tabs.create({ url: url.toString() });
 }
 
-/** Render the ATS score, keyword match, change explanation, and PDF link. */
+/** Render the keyword match, ATS score, change explanation, and PDF link. */
 function renderResult(container, result) {
   container.innerHTML = "";
+
+  // Keyword sections lead the panel — added_keywords is a subset of
+  // missing_keywords (see services/keyword_matcher.py::find_added_keywords
+  // on the backend), so it's excluded from "Missing" once shown under
+  // "Added" rather than appearing, confusingly, in both.
+  const added = result.added_keywords ?? [];
+  const stillMissing = (result.missing_keywords ?? []).filter((kw) => !added.includes(kw));
+
+  if (added.length) {
+    container.appendChild(keywordSection("Added to your CV", added, "warn"));
+  }
+  if (result.matched_keywords?.length) {
+    container.appendChild(keywordSection("Matched keywords", result.matched_keywords, "ok"));
+  }
+  if (stillMissing.length) {
+    container.appendChild(keywordSection("Missing keywords", stillMissing, "err"));
+  }
 
   const score = document.createElement("p");
   score.className = "opt-score";
   score.textContent = `ATS score: ${Math.round(result.ats_score)}`;
   container.appendChild(score);
-
-  if (result.matched_keywords?.length) {
-    container.appendChild(keywordSection("Matched keywords", result.matched_keywords, "ok"));
-  }
-  if (result.missing_keywords?.length) {
-    container.appendChild(keywordSection("Missing keywords", result.missing_keywords, "err"));
-  }
 
   const changes = result.optimized_resume?.changes_summary;
   if (changes?.length) {
