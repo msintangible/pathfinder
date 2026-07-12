@@ -214,6 +214,7 @@ class ResumeGenerationAgent:
             return None, False
 
         real_patches = []
+        skills_patched = False
         for patch in patches:
             real_block_id = correlation.block_id_map.get(patch.block_id)
             if real_block_id is None:
@@ -223,11 +224,26 @@ class ResumeGenerationAgent:
                 )
                 continue
             real_patches.append(ContentPatch(block_id=real_block_id, new_text=patch.new_text))
+            if patch.block_id == "skills":
+                skills_patched = True
+        llm_patches_applied = len(real_patches)
+
+        # Only blank the leftover skills-section blocks once the primary
+        # skills block was actually rewritten — otherwise this would clear
+        # stale skill lines while leaving others untouched, which reads worse
+        # than not touching the skills section at all.
+        if skills_patched and correlation.skills_overflow_block_ids:
+            for overflow_block_id in correlation.skills_overflow_block_ids:
+                real_patches.append(ContentPatch(block_id=overflow_block_id, new_text=""))
+            logger.info(
+                "_build_render_layout: blanked %d stale skills block(s) alongside the primary skills patch",
+                len(correlation.skills_overflow_block_ids),
+            )
 
         real_patch_result = apply_patches(real_layout, real_patches)
         logger.info(
             "_build_render_layout: applied %d/%d patches to the real document layout",
-            len(real_patches), len(patches),
+            llm_patches_applied, len(patches),
         )
         return real_patch_result.document.model_dump(), True
 

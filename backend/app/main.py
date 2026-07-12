@@ -7,7 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+_BACKEND_DIR = os.path.join(os.path.dirname(__file__), "..")
+# backend/ itself, so sibling-of-app imports (database.session, models.base,
+# api.v1.router, etc.) resolve; the repo root above it, so uvicorn.run's own
+# "backend.app.main:app" string resolves as a dotted import too — needed
+# when this is launched by a plain `python backend/app/main.py` rather than
+# through an IDE run configuration that injects the repo root itself.
+sys.path.insert(0, _BACKEND_DIR)
+sys.path.insert(0, os.path.join(_BACKEND_DIR, ".."))
 
 from database.session import engine
 from models.base import Base

@@ -114,6 +114,32 @@ def test_empty_profile_has_zero_match_rate_and_empty_map():
     assert result.block_id_map == {}
 
 
+def test_global_matching_resolves_declaration_order_contention():
+    # bullets[0] is declared first and is a decent (not perfect) match for
+    # paragraph[0] — its only qualifying candidate. bullets[1] is an *exact*
+    # match for that same paragraph[0] and has no other real-document
+    # counterpart at all (its similarity to paragraph[1] is well below
+    # threshold). Field-declaration-order greedy would let bullets[0] claim
+    # paragraph[0] first since it's bullets[0]'s best available option,
+    # leaving bullets[1] unmatched even though it's a far stronger candidate
+    # for that same block. Global best-match-first assignment must instead
+    # give paragraph[0] to bullets[1] (the single strongest pair overall) and
+    # fall bullets[0] back to its second-best option, paragraph[1].
+    paragraph_0 = "alpha bravo charlie delta echo foxtrot golf hotel india juliet"
+    paragraph_1 = "kilo lima mike november oscar papa quebec romeo sierra tango"
+    bullet_0 = "alpha bravo charlie delta echo foxtrot golf kilo lima mike november oscar papa quebec"
+    bullet_1 = paragraph_0
+
+    layout = _docx_layout([(paragraph_0, None), (paragraph_1, None)])
+    profile = {"work_experience": [{"bullets": [bullet_0, bullet_1]}]}
+
+    result = correlate_profile_to_layout(profile, layout)
+
+    assert result.block_id_map["work_experience[0].bullets[1]"] == "paragraph[0]"
+    assert result.block_id_map["work_experience[0].bullets[0]"] == "paragraph[1]"
+    assert result.match_rate == 1.0
+
+
 # ---------------------------------------------------------------------------
 # Skills section detection — docx heading heuristic
 # ---------------------------------------------------------------------------
@@ -127,6 +153,7 @@ def test_finds_skills_block_via_docx_heading_keyword():
     result = correlate_profile_to_layout({}, layout)
 
     assert result.block_id_map["skills"] == "paragraph[1]"
+    assert result.skills_overflow_block_ids == []
 
 
 def test_skills_field_is_excluded_from_match_rate_denominator():
@@ -140,7 +167,7 @@ def test_skills_field_is_excluded_from_match_rate_denominator():
     assert result.match_rate == 0.0  # no correlatable (non-skills) fields at all, not skewed by the skills match
 
 
-def test_multi_block_skills_section_is_left_uncorrelated():
+def test_multi_block_skills_section_uses_first_block_and_flags_overflow():
     layout = _docx_layout([
         ("Skills", "Heading 1"),
         ("Python", None),
@@ -149,7 +176,22 @@ def test_multi_block_skills_section_is_left_uncorrelated():
 
     result = correlate_profile_to_layout({}, layout)
 
-    assert "skills" not in result.block_id_map
+    assert result.block_id_map["skills"] == "paragraph[1]"
+    assert result.skills_overflow_block_ids == ["paragraph[2]"]
+
+
+def test_three_block_skills_section_flags_all_but_first_as_overflow():
+    layout = _docx_layout([
+        ("Skills", "Heading 1"),
+        ("Languages: Python, Java", None),
+        ("Frameworks: Django, React", None),
+        ("Tools: Docker, Git", None),
+    ])
+
+    result = correlate_profile_to_layout({}, layout)
+
+    assert result.block_id_map["skills"] == "paragraph[1]"
+    assert result.skills_overflow_block_ids == ["paragraph[2]", "paragraph[3]"]
 
 
 def test_non_skills_headings_are_not_mistaken_for_a_skills_section():

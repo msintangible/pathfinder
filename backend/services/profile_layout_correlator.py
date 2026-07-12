@@ -52,91 +52,128 @@ class CorrelationResult:
     match_rate: float = 0.0
     matched_count: int = 0
     total_count: int = 0
+    # Real block ids of extra, unclaimed skills-section blocks beyond the
+    # primary one mapped under block_id_map["skills"] — see _find_skills_block.
+    skills_overflow_block_ids: list[str] = field(default_factory=list)
 
 
 def correlate_profile_to_layout(ranked_profile: dict, layout: ResumeLayoutDocument) -> CorrelationResult:
     all_blocks = [block for section in layout.sections for block in section.blocks]
-    used_block_ids: set[str] = set()
-    block_id_map: dict[str, str] = {}
     total = 0
-    matched = 0
 
-    def try_match(synthetic_id: str, text: str) -> None:
-        nonlocal total, matched
+    fields: list[tuple[str, str]] = []
+
+    def collect(synthetic_id: str, text: str) -> None:
+        nonlocal total
         if not text or not text.strip():
             logger.debug("correlate: %s skipped — no original text to match against", synthetic_id)
             return
         total += 1
-        block, ratio = _best_match(text, all_blocks, used_block_ids)
-        if block is not None and ratio >= _MATCH_THRESHOLD:
-            block_id_map[synthetic_id] = block.block_id
-            used_block_ids.add(block.block_id)
-            matched += 1
-            logger.debug("correlate: %s -> %s (ratio=%.2f)", synthetic_id, block.block_id, ratio)
-        else:
-            logger.debug(
-                "correlate: %s did NOT match (best_candidate=%s, best_ratio=%.2f, threshold=%.2f)",
-                synthetic_id, block.block_id if block else None, ratio, _MATCH_THRESHOLD,
-            )
+        fields.append((synthetic_id, text))
 
-    try_match("headline", ranked_profile.get("headline") or "")
-    try_match("summary", ranked_profile.get("summary") or "")
+    collect("headline", ranked_profile.get("headline") or "")
+    collect("summary", ranked_profile.get("summary") or "")
 
     for i, entry in enumerate(ranked_profile.get("work_experience") or []):
         for j, bullet in enumerate(entry.get("bullets") or []):
-            try_match(f"work_experience[{i}].bullets[{j}]", bullet or "")
+            collect(f"work_experience[{i}].bullets[{j}]", bullet or "")
 
     for i, project in enumerate(ranked_profile.get("projects") or []):
-        try_match(f"projects[{i}].description", project.get("description") or "")
+        collect(f"projects[{i}].description", project.get("description") or "")
 
-    skills_block = _find_skills_block(layout, used_block_ids)
+    block_id_map, matched = _assign_best_matches(fields, all_blocks)
+    used_block_ids = set(block_id_map.values())
+
+    skills_block, skills_overflow = _find_skills_blocks(layout, used_block_ids)
     if skills_block is not None:
         block_id_map["skills"] = skills_block.block_id
         logger.debug("correlate: skills -> %s", skills_block.block_id)
+        if skills_overflow:
+            logger.debug(
+                "correlate: skills section has %d extra block(s) beyond the primary — flagged as overflow: %s",
+                len(skills_overflow), [b.block_id for b in skills_overflow],
+            )
     else:
-        logger.debug("correlate: skills did NOT match — no single-block skills section found")
+        logger.debug("correlate: skills did NOT match — no skills section with a content block found")
 
     match_rate = (matched / total) if total else 0.0
     logger.info(
         "correlate_profile_to_layout: matched %d/%d correlatable fields (%.0f%%)%s",
         matched, total, match_rate * 100, "" if total else " (nothing to correlate)",
     )
-    return CorrelationResult(block_id_map=block_id_map, match_rate=match_rate, matched_count=matched, total_count=total)
+    return CorrelationResult(
+        block_id_map=block_id_map,
+        match_rate=match_rate,
+        matched_count=matched,
+        total_count=total,
+        skills_overflow_block_ids=[b.block_id for b in skills_overflow],
+    )
 
 
 def _normalize(text: str) -> str:
     return " ".join(text.strip().lower().split())
 
 
-def _best_match(text: str, blocks: list[TextBlock], used_block_ids: set[str]) -> tuple[TextBlock | None, float]:
-    target = _normalize(text)
-    if not target:
-        return None, 0.0
-
-    best_block, best_ratio = None, 0.0
-    for block in blocks:
-        if block.block_id in used_block_ids:
-            continue
-        ratio = SequenceMatcher(None, _normalize(block.text), target).ratio()
-        if ratio > best_ratio:
-            best_block, best_ratio = block, ratio
-    return best_block, best_ratio
-
-
-def _find_skills_block(layout: ResumeLayoutDocument, used_block_ids: set[str]) -> TextBlock | None:
+def _assign_best_matches(fields: list[tuple[str, str]], blocks: list[TextBlock]) -> tuple[dict[str, str], int]:
     """
-    Finds the single real block representing "the skills section" so the
-    LLM's freshly-synthesized skills list can be written back in place.
+    Assigns each (synthetic_id, text) field to at most one block, globally
+    picking the highest-ratio available (field, block) pair first rather than
+    resolving fields one at a time in declaration order. Declaration-order
+    greedy lets an earlier field claim a block it matches only decently,
+    starving a later field that would have matched that same block far
+    better — global assignment can only match equal-or-more fields than that
+    for the same threshold and input, since it never lets a weak claim block
+    a strong one.
+    """
+    normalized_field_texts = [_normalize(text) for _, text in fields]
+    normalized_block_texts = [_normalize(block.text) for block in blocks]
+
+    candidates: list[tuple[float, int, int]] = []
+    for field_index, field_text in enumerate(normalized_field_texts):
+        if not field_text:
+            continue
+        for block_index, block_text in enumerate(normalized_block_texts):
+            ratio = SequenceMatcher(None, block_text, field_text).ratio()
+            if ratio >= _MATCH_THRESHOLD:
+                candidates.append((ratio, field_index, block_index))
+
+    # Highest ratio first; index order as a deterministic tiebreak so equal-
+    # ratio candidates resolve the same way every time.
+    candidates.sort(key=lambda candidate: (-candidate[0], candidate[1], candidate[2]))
+
+    block_id_map: dict[str, str] = {}
+    matched_field_indices: set[int] = set()
+    matched_block_indices: set[int] = set()
+    for ratio, field_index, block_index in candidates:
+        if field_index in matched_field_indices or block_index in matched_block_indices:
+            continue
+        synthetic_id, _ = fields[field_index]
+        block = blocks[block_index]
+        block_id_map[synthetic_id] = block.block_id
+        matched_field_indices.add(field_index)
+        matched_block_indices.add(block_index)
+        logger.debug("correlate: %s -> %s (ratio=%.2f)", synthetic_id, block.block_id, ratio)
+
+    for field_index, (synthetic_id, _) in enumerate(fields):
+        if field_index not in matched_field_indices:
+            logger.debug("correlate: %s did NOT match (threshold=%.2f)", synthetic_id, _MATCH_THRESHOLD)
+
+    return block_id_map, len(matched_field_indices)
+
+
+def _find_skills_blocks(layout: ResumeLayoutDocument, used_block_ids: set[str]) -> tuple[TextBlock | None, list[TextBlock]]:
+    """
+    Finds the real block(s) representing "the skills section" so the LLM's
+    freshly-synthesized skills list can be written back in place.
 
     PDF layouts may already carry role=SKILLS from gemini_vision_layout_agent.py.
     DOCX layouts never carry section roles (docx_layout_extractor.py doesn't
-    classify them), so this falls back to a heading-keyword heuristic. Either
-    way, only a section with exactly one un-claimed, non-heading content
-    block is used — a multi-block skills section (e.g. one line per category)
-    has no single place to put one consolidated list, so it's left
-    uncorrelated (skills still shows up correctly in optimized_resume for the
-    API/DB/UI; it just won't be rewritten in-place in that document) rather
-    than guessed at.
+    classify them), so this falls back to a heading-keyword heuristic. The
+    first un-claimed, non-heading content block (document order) becomes the
+    primary block that receives the full consolidated skills list; any
+    further content blocks in that same section (e.g. one line per category,
+    or a table) are returned as overflow so the caller can blank them rather
+    than leave stale pre-optimization skill text sitting next to the new list.
     """
     for section in layout.sections:
         if not _is_skills_section(section):
@@ -145,9 +182,9 @@ def _find_skills_block(layout: ResumeLayoutDocument, used_block_ids: set[str]) -
             block for block in section.blocks
             if block.block_id not in used_block_ids and not is_heading_block(block)
         ]
-        if len(content_blocks) == 1:
-            return content_blocks[0]
-    return None
+        if content_blocks:
+            return content_blocks[0], content_blocks[1:]
+    return None, []
 
 
 def _is_skills_section(section: LayoutSection) -> bool:

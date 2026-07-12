@@ -215,6 +215,15 @@ def _make_docx_bytes(paragraphs: list[str]) -> bytes:
     return buffer.getvalue()
 
 
+def _make_docx_bytes_with_styles(paragraphs: list[tuple[str, str | None]]) -> bytes:
+    document = docx.Document()
+    for text, style_name in paragraphs:
+        document.add_paragraph(text, style=style_name)
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
 @pytest.mark.anyio
 async def test_confident_correlation_produces_a_patched_real_layout(mock_genai):
     # The real document's text closely matches the profile fields it was
@@ -248,6 +257,76 @@ async def test_confident_correlation_produces_a_patched_real_layout(mock_genai):
     }
     assert real_blocks["paragraph[0]"] == "Senior Backend Engineer"
     assert real_blocks["paragraph[1]"] == "Built scalable APIs with Python and AWS"
+
+
+@pytest.mark.anyio
+async def test_skills_overflow_blocks_are_blanked_when_skills_patch_is_applied(mock_genai):
+    # A multi-line skills section: only the first line is the primary
+    # correlated skills block; the rest should be blanked once the LLM's
+    # skills patch is applied, not left holding stale pre-optimization text.
+    docx_bytes = _make_docx_bytes_with_styles([
+        ("Backend Engineer", None),
+        ("Skills", "Heading 1"),
+        ("Python", None),
+        ("PostgreSQL", None),
+        ("Built APIs with Python and AWS", None),
+    ])
+    layout_document = extract_docx_layout(docx_bytes).model_dump()
+    profile = {
+        "headline": "Backend Engineer",
+        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
+    }
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
+            {"block_id": "skills", "new_text": "Python, PostgreSQL, Docker"},
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
+        ]
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
+
+    real_blocks = {
+        block["block_id"]: block["text"]
+        for section in result["render_layout"]["sections"]
+        for block in section["blocks"]
+    }
+    assert real_blocks["paragraph[2]"] == "Python, PostgreSQL, Docker"
+    assert real_blocks["paragraph[3]"] == ""
+
+
+@pytest.mark.anyio
+async def test_skills_overflow_blocks_are_untouched_without_a_skills_patch(mock_genai):
+    # Same multi-line skills section, but the model never emits a "skills"
+    # patch — the overflow blocks must be left exactly as-is, not blanked.
+    docx_bytes = _make_docx_bytes_with_styles([
+        ("Backend Engineer", None),
+        ("Skills", "Heading 1"),
+        ("Python", None),
+        ("PostgreSQL", None),
+        ("Built APIs with Python and AWS", None),
+    ])
+    layout_document = extract_docx_layout(docx_bytes).model_dump()
+    profile = {
+        "headline": "Backend Engineer",
+        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
+    }
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
+        ]
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
+
+    real_blocks = {
+        block["block_id"]: block["text"]
+        for section in result["render_layout"]["sections"]
+        for block in section["blocks"]
+    }
+    assert real_blocks["paragraph[2]"] == "Python"
+    assert real_blocks["paragraph[3]"] == "PostgreSQL"
 
 
 @pytest.mark.anyio
