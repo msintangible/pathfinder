@@ -41,6 +41,13 @@ _MATCH_THRESHOLD = 0.55
 
 _SKILLS_HEADING_KEYWORDS = ("skill", "technical", "technolog", "tools")
 
+# PDF blocks have no paragraph style to check (see is_heading_block), so a
+# heading there is instead recognized structurally: real section headers
+# ("Education", "Technical Skills") are short and entirely bold, unlike a
+# content line that merely starts with a bold label ("Developer Tools: AWS,
+# Postman, ..."), which mixes a bold run with plain ones.
+_MAX_PDF_HEADING_WORDS = 5
+
 
 @dataclass
 class CorrelationResult:
@@ -195,10 +202,23 @@ def _is_skills_section(section: LayoutSection) -> bool:
 
 
 def is_heading_block(block: TextBlock) -> bool:
-    """Public since resume_section_order.py reuses this same style-based
-    heading check to classify docx section headings."""
-    style_name = (block.docx_anchor.style_name or "") if block.docx_anchor else ""
-    return style_name.lower().startswith("heading") or style_name.lower() == "title"
+    """Public since resume_section_order.py reuses this same heading check
+    to classify docx *and* pdf section headings.
+
+    DOCX carries an actual paragraph style to check. PDF has no such
+    metadata, so a heading there is recognized structurally instead — see
+    _MAX_PDF_HEADING_WORDS.
+    """
+    if block.docx_anchor is not None:
+        style_name = block.docx_anchor.style_name or ""
+        return style_name.lower().startswith("heading") or style_name.lower() == "title"
+    if block.pdf_anchor is not None:
+        return (
+            bool(block.runs)
+            and all(run.bold for run in block.runs)
+            and len(block.text.split()) <= _MAX_PDF_HEADING_WORDS
+        )
+    return False
 
 
 def _mentions_skills(text: str) -> bool:

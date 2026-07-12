@@ -2,7 +2,7 @@ import io
 
 import docx
 
-from schemas.resume_layout import LayoutSection, ResumeLayoutDocument, RunSpan, SectionRole, TextBlock
+from schemas.resume_layout import LayoutSection, PdfAnchor, ResumeLayoutDocument, RunSpan, SectionRole, TextBlock
 from services.resume_section_order import DEFAULT_SECTION_ORDER, infer_section_order
 
 
@@ -83,6 +83,30 @@ def test_infers_order_from_pdf_role_labels():
     order = infer_section_order(layout.model_dump())
 
     assert order == ["skills", "experience", "summary", "projects"]
+
+
+def test_infers_pdf_heading_via_keyword_fallback_when_unlabeled():
+    # No role assigned (as if vision labeling failed for this page) — must
+    # still classify via the heading-keyword fallback, which requires
+    # is_heading_block to recognize a bold, short PDF block as a heading.
+    layout = ResumeLayoutDocument(source_format="pdf", sections=[
+        LayoutSection(section_id="s0", blocks=[
+            TextBlock(
+                block_id="page[0].block[0]", kind="paragraph", text="Technical Skills",
+                runs=[RunSpan(text="Technical Skills", bold=True)],
+                pdf_anchor=PdfAnchor(page_number=0, x0=0, y0=0, x1=100, y1=10),
+            ),
+            TextBlock(
+                block_id="page[0].block[1]", kind="paragraph", text="Python, Django",
+                runs=[RunSpan(text="Python, Django")],
+                pdf_anchor=PdfAnchor(page_number=0, x0=0, y0=0, x1=100, y1=10),
+            ),
+        ]),
+    ])
+
+    order = infer_section_order(layout.model_dump())
+
+    assert order[0] == "skills"
 
 
 def test_duplicate_role_sections_only_counted_once():

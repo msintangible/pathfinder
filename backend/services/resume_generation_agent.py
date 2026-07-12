@@ -15,7 +15,12 @@ from services.llm_output import parse_llm_json
 from services.patch_engine import apply_patches
 from services.profile_layout_correlator import correlate_profile_to_layout
 from services.relevance_ranker import rank_profile
-from services.synthetic_profile_layout import build_synthetic_layout, flatten_layout_to_resume
+from services.synthetic_profile_layout import (
+    build_synthetic_layout,
+    flatten_layout_to_resume,
+    join_comma_list,
+    split_comma_list,
+)
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -95,17 +100,22 @@ If no genuine support exists for a missing_keyword, leave the block alone —
 never fabricate the experience to claim it.
 
 Section rules:
-- summary: rewrite freely to target the role.
+- summary: rewrite freely to target the role, but keep it roughly the same
+  length as its current text — this block renders into a fixed-size area in
+  the original document, and growing it substantially risks visible
+  truncation.
 - skills: write a single comma-separated list compiled from
   candidate_profile's technical_skills, programming_languages, frameworks,
   libraries, databases, cloud_platforms, devops_tools, ai_ml_tools,
   development_tools, and the languages/technologies used across
   github_repositories — reordered to prioritize whatever's relevant to this
   job. Every item must already exist in one of those sources; never add or
-  drop a genuine skill.
-- experience bullets: wording only. Keep each bullet roughly its original
-  length — expand only as far as a genuinely supported keyword requires, and
-  never enough to noticeably lengthen the overall document.
+  drop a genuine skill. This also renders into a fixed-size area, so write it
+  compactly: a flat comma-separated list, with no per-category label
+  prefixes ("Languages:", "Tools:", ...) eating into that space.
+- experience bullets: wording only. Keep each bullet within about 15% of its
+  original length — expand only as far as a genuinely supported keyword
+  requires, and never enough to noticeably lengthen the overall document.
 - projects: description and technologies may be reworded/surfaced the same
   way as experience bullets; entry order is decided upstream, not by you.
 - changes_summary: write one line per block you actually changed — never a
@@ -214,8 +224,11 @@ class ResumeGenerationAgent:
             return None, False
 
         real_patches = []
-        skills_patched = False
+        skills_new_text: str | None = None
         for patch in patches:
+            if patch.block_id == "skills":
+                skills_new_text = patch.new_text
+                continue
             real_block_id = correlation.block_id_map.get(patch.block_id)
             if real_block_id is None:
                 logger.debug(
@@ -224,21 +237,25 @@ class ResumeGenerationAgent:
                 )
                 continue
             real_patches.append(ContentPatch(block_id=real_block_id, new_text=patch.new_text))
-            if patch.block_id == "skills":
-                skills_patched = True
         llm_patches_applied = len(real_patches)
 
-        # Only blank the leftover skills-section blocks once the primary
-        # skills block was actually rewritten — otherwise this would clear
-        # stale skill lines while leaving others untouched, which reads worse
-        # than not touching the skills section at all.
-        if skills_patched and correlation.skills_overflow_block_ids:
-            for overflow_block_id in correlation.skills_overflow_block_ids:
-                real_patches.append(ContentPatch(block_id=overflow_block_id, new_text=""))
-            logger.info(
-                "_build_render_layout: blanked %d stale skills block(s) alongside the primary skills patch",
-                len(correlation.skills_overflow_block_ids),
-            )
+        # A multi-block skills section (e.g. one line per category) has no
+        # single block to hold one consolidated list, so instead of writing
+        # everything to one line and blanking the rest, the list is split
+        # across every original skills block — each keeps its own rect
+        # rather than one line being asked to fit what N lines used to hold.
+        skills_primary_block_id = correlation.block_id_map.get("skills")
+        if skills_new_text is not None and skills_primary_block_id is not None:
+            skills_block_ids = [skills_primary_block_id, *correlation.skills_overflow_block_ids]
+            items = split_comma_list(skills_new_text)
+            for block_id, chunk in zip(skills_block_ids, _chunk_evenly(items, len(skills_block_ids))):
+                real_patches.append(ContentPatch(block_id=block_id, new_text=join_comma_list(chunk)))
+            llm_patches_applied += 1
+            if len(skills_block_ids) > 1:
+                logger.info(
+                    "_build_render_layout: distributed the skills patch across %d original skills block(s)",
+                    len(skills_block_ids),
+                )
 
         real_patch_result = apply_patches(real_layout, real_patches)
         logger.info(
@@ -273,3 +290,17 @@ class ResumeGenerationAgent:
         )
         result = parse_llm_json(response.text, OptimizationPatchResponse)
         return [ContentPatch(**patch) for patch in result["patches"]]
+
+
+def _chunk_evenly(items: list[str], chunk_count: int) -> list[list[str]]:
+    """Splits items into chunk_count roughly-equal, order-preserving groups,
+    front-loading any remainder (e.g. 7 items / 3 chunks -> sizes [3, 2, 2])
+    so earlier chunks get the extra item rather than the last one."""
+    base, remainder = divmod(len(items), chunk_count)
+    chunks: list[list[str]] = []
+    cursor = 0
+    for i in range(chunk_count):
+        size = base + (1 if i < remainder else 0)
+        chunks.append(items[cursor:cursor + size])
+        cursor += size
+    return chunks

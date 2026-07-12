@@ -260,10 +260,10 @@ async def test_confident_correlation_produces_a_patched_real_layout(mock_genai):
 
 
 @pytest.mark.anyio
-async def test_skills_overflow_blocks_are_blanked_when_skills_patch_is_applied(mock_genai):
-    # A multi-line skills section: only the first line is the primary
-    # correlated skills block; the rest should be blanked once the LLM's
-    # skills patch is applied, not left holding stale pre-optimization text.
+async def test_skills_patch_is_distributed_across_overflow_blocks(mock_genai):
+    # A multi-line skills section: instead of writing the whole list to the
+    # first line and blanking the rest, each line gets its own roughly-even
+    # share so no single line has to fit what used to span several.
     docx_bytes = _make_docx_bytes_with_styles([
         ("Backend Engineer", None),
         ("Skills", "Heading 1"),
@@ -291,8 +291,80 @@ async def test_skills_overflow_blocks_are_blanked_when_skills_patch_is_applied(m
         for section in result["render_layout"]["sections"]
         for block in section["blocks"]
     }
+    assert real_blocks["paragraph[2]"] == "Python, PostgreSQL"
+    assert real_blocks["paragraph[3]"] == "Docker"
+
+
+@pytest.mark.anyio
+async def test_skills_patch_distributed_across_three_blocks_loses_no_items(mock_genai):
+    # Mirrors a real "Technical Skills" section: heading + 3 category lines.
+    # Every item from the LLM's compiled list must land in exactly one
+    # block, with no item dropped or duplicated across the split.
+    docx_bytes = _make_docx_bytes_with_styles([
+        ("Backend Engineer", None),
+        ("Skills", "Heading 1"),
+        ("Python", None),
+        ("PostgreSQL", None),
+        ("Docker", None),
+        ("Built APIs with Python and AWS", None),
+    ])
+    layout_document = extract_docx_layout(docx_bytes).model_dump()
+    profile = {
+        "headline": "Backend Engineer",
+        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
+    }
+    skills_items = ["Python", "Java", "SQL", "HTML5", "CSS", "JavaScript", "TypeScript"]
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
+            {"block_id": "skills", "new_text": ", ".join(skills_items)},
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
+        ]
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
+
+    real_blocks = {
+        block["block_id"]: block["text"]
+        for section in result["render_layout"]["sections"]
+        for block in section["blocks"]
+    }
+    skills_block_ids = ["paragraph[2]", "paragraph[3]", "paragraph[4]"]
+    chunks = [real_blocks[block_id] for block_id in skills_block_ids]
+    assert all(chunk for chunk in chunks)  # every block got a non-empty share
+    recombined = [item.strip() for chunk in chunks for item in chunk.split(",")]
+    assert recombined == skills_items
+
+
+@pytest.mark.anyio
+async def test_single_block_skills_section_gets_the_full_list_unsplit(mock_genai):
+    docx_bytes = _make_docx_bytes_with_styles([
+        ("Backend Engineer", None),
+        ("Skills", "Heading 1"),
+        ("Python", None),
+        ("Built APIs with Python and AWS", None),
+    ])
+    layout_document = extract_docx_layout(docx_bytes).model_dump()
+    profile = {
+        "headline": "Backend Engineer",
+        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
+    }
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
+            {"block_id": "skills", "new_text": "Python, PostgreSQL, Docker"},
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
+        ]
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
+
+    real_blocks = {
+        block["block_id"]: block["text"]
+        for section in result["render_layout"]["sections"]
+        for block in section["blocks"]
+    }
     assert real_blocks["paragraph[2]"] == "Python, PostgreSQL, Docker"
-    assert real_blocks["paragraph[3]"] == ""
 
 
 @pytest.mark.anyio
@@ -383,6 +455,17 @@ async def test_uses_json_response_mode_and_zero_temperature(mock_genai):
 def test_prompt_asks_for_changes_summary():
     """Regression guard: a future prompt edit must not silently drop the field the schema expects."""
     assert "changes_summary" in _SYSTEM_PROMPT
+
+
+def test_prompt_gives_length_guidance_for_every_block_type():
+    """Regression guard: summary/skills/bullets each render into a fixed-size
+    area of the original document, so a future prompt edit must not silently
+    drop their length guidance — that's what keeps rendered text from being
+    truncated."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "roughly the same length" in normalized_prompt  # summary
+    assert "compactly" in normalized_prompt  # skills
+    assert "15%" in normalized_prompt  # experience bullets
 
 
 def test_prompt_explains_the_patch_contract():

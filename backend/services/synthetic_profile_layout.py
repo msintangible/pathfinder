@@ -36,7 +36,7 @@ def build_synthetic_layout(ranked_profile: dict) -> ResumeLayoutDocument:
 
     for i, project in enumerate(ranked_profile.get("projects") or []):
         blocks.append(_block(f"projects[{i}].description", project.get("description") or ""))
-        blocks.append(_block(f"projects[{i}].technologies", _join(project.get("technologies"))))
+        blocks.append(_block(f"projects[{i}].technologies", join_comma_list(project.get("technologies"))))
 
     return ResumeLayoutDocument(source_format="synthetic", sections=[LayoutSection(section_id="profile", blocks=blocks)])
 
@@ -70,13 +70,13 @@ def flatten_layout_to_resume(ranked_profile: dict, layout: ResumeLayoutDocument)
         projects.append({
             "name": project.get("name"),
             "description": text_by_id[f"projects[{i}].description"] or None,
-            "technologies": _split(text_by_id[f"projects[{i}].technologies"]),
+            "technologies": split_comma_list(text_by_id[f"projects[{i}].technologies"]),
         })
 
     return {
         "headline": text_by_id["headline"] or None,
         "summary": text_by_id["summary"] or None,
-        "skills": _split(text_by_id["skills"]),
+        "skills": split_comma_list(text_by_id["skills"]),
         "experience": experience,
         "projects": projects,
         "changes_summary": [line.strip() for line in text_by_id["changes_summary"].split("\n") if line.strip()],
@@ -87,9 +87,9 @@ def _block(block_id: str, text: str) -> TextBlock:
     return TextBlock(block_id=block_id, kind="paragraph", text=text, runs=[RunSpan(text=text)])
 
 
-def _join(items: list[str] | None) -> str:
+def join_comma_list(items: list[str] | None) -> str:
     return _LIST_SEPARATOR.join(items) if items else ""
 
 
-def _split(text: str) -> list[str]:
+def split_comma_list(text: str) -> list[str]:
     return [item.strip() for item in text.split(",") if item.strip()]

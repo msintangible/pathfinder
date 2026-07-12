@@ -59,7 +59,7 @@ def _paragraph_block(page_number: int, block_index: int, block: dict) -> TextBlo
 
     all_spans = [span for line in lines for span in line.get("spans", []) if span.get("text", "")]
     x0, y0, x1, y1 = block.get("bbox", (0.0, 0.0, 0.0, 0.0))
-    first_span = all_spans[0] if all_spans else {}
+    anchor_span = _dominant_span(all_spans)
     return TextBlock(
         block_id=f"page[{page_number}].block[{block_index}]",
         kind="paragraph",
@@ -67,9 +67,18 @@ def _paragraph_block(page_number: int, block_index: int, block: dict) -> TextBlo
         runs=_run_spans(all_spans),
         pdf_anchor=PdfAnchor(
             page_number=page_number, x0=x0, y0=y0, x1=x1, y1=y1,
-            font_name=first_span.get("font"), font_size=first_span.get("size"),
+            font_name=anchor_span.get("font"), font_size=anchor_span.get("size"),
         ),
     )
+
+
+def _dominant_span(spans: list[dict]) -> dict:
+    """The block's anchor font/size come from whichever span covers the most
+    characters, not simply the first one — a bullet line's very first span
+    is often just the bullet glyph itself, drawn in a different (sometimes
+    symbol-only) font from the actual body text that follows it, which would
+    otherwise make the whole block look like it's set in that glyph's font."""
+    return max(spans, key=lambda span: len(span.get("text", "")), default={})
 
 
 def extract_pdf_layout(pdf_bytes: bytes) -> ResumeLayoutDocument:

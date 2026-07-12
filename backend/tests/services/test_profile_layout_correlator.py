@@ -216,6 +216,25 @@ def _pdf_block(block_id: str, text: str) -> TextBlock:
     )
 
 
+def _pdf_heading_block(block_id: str, text: str) -> TextBlock:
+    """A real PDF section header: one run, entirely bold, short text."""
+    return TextBlock(
+        block_id=block_id, kind="paragraph", text=text, runs=[RunSpan(text=text, bold=True)],
+        pdf_anchor=PdfAnchor(page_number=0, x0=0, y0=0, x1=100, y1=10),
+    )
+
+
+def _pdf_labeled_content_block(block_id: str, label: str, rest: str) -> TextBlock:
+    """A content line with a bold label prefix and plain body — e.g.
+    "**Developer Tools**: AWS, Postman, ..." — must NOT be mistaken for a
+    heading even though it starts with a bold run."""
+    return TextBlock(
+        block_id=block_id, kind="paragraph", text=f"{label}{rest}",
+        runs=[RunSpan(text=label, bold=True), RunSpan(text=rest, bold=False)],
+        pdf_anchor=PdfAnchor(page_number=0, x0=0, y0=0, x1=100, y1=10),
+    )
+
+
 def test_finds_skills_block_via_pdf_role_label():
     layout = ResumeLayoutDocument(source_format="pdf", sections=[
         LayoutSection(section_id="s0", role=SectionRole.SKILLS, blocks=[
@@ -226,3 +245,40 @@ def test_finds_skills_block_via_pdf_role_label():
     result = correlate_profile_to_layout({}, layout)
 
     assert result.block_id_map["skills"] == "page[0].block[0].line[0]"
+
+
+def test_pdf_skills_heading_is_excluded_from_content_blocks():
+    # Mirrors a real multi-line PDF skills section: a bold "Technical
+    # Skills" heading followed by category lines that each start with a
+    # bold label. The heading must not be picked as the primary skills
+    # block, and the labeled content lines must not be mistaken for headings
+    # just because they start with a bold run.
+    layout = ResumeLayoutDocument(source_format="pdf", sections=[
+        LayoutSection(section_id="s0", role=SectionRole.SKILLS, blocks=[
+            _pdf_heading_block("page[0].block[0]", "Technical Skills"),
+            _pdf_labeled_content_block("page[0].block[1]", "Languages: ", "Python, Java, SQL"),
+            _pdf_labeled_content_block("page[0].block[2]", "Developer Tools: ", "AWS, Postman, Git"),
+        ]),
+    ])
+
+    result = correlate_profile_to_layout({}, layout)
+
+    assert result.block_id_map["skills"] == "page[0].block[1]"
+    assert result.skills_overflow_block_ids == ["page[0].block[2]"]
+
+
+def test_pdf_skills_heading_keyword_fallback_now_works():
+    # No role assigned (defaults to OTHER, as if vision labeling failed or
+    # mislabeled this page) — detection must still succeed via the
+    # heading-keyword fallback, now that is_heading_block recognizes PDF
+    # headings structurally.
+    layout = ResumeLayoutDocument(source_format="pdf", sections=[
+        LayoutSection(section_id="s0", blocks=[
+            _pdf_heading_block("page[0].block[0]", "Technical Skills"),
+            _pdf_block("page[0].block[1]", "Python, Django, PostgreSQL"),
+        ]),
+    ])
+
+    result = correlate_profile_to_layout({}, layout)
+
+    assert result.block_id_map["skills"] == "page[0].block[1]"

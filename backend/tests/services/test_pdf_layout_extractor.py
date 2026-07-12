@@ -128,6 +128,34 @@ def test_wrapped_bullet_becomes_a_single_block_not_one_per_line():
     assert blocks[0].block_id == "page[0].block[0]"
 
 
+def _make_pdf_with_leading_symbol_glyph(bullet_glyph_font: str, body_text: str) -> bytes:
+    """A bullet line whose first span is a single glyph in a different font
+    from the rest of the line — mirrors a LaTeX-style bullet character set
+    in a math/symbol font (e.g. Computer Modern Symbol) ahead of normal
+    body text in a regular text font."""
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 100), "*", fontsize=6, fontname=bullet_glyph_font)
+    page.insert_text((80, 100), body_text, fontsize=11, fontname="helv")
+    buffer = document.tobytes()
+    document.close()
+    return buffer
+
+
+def test_anchor_font_comes_from_the_dominant_span_not_the_first():
+    # "symb" (Symbol) stands in for a math/symbol bullet-glyph font; the
+    # anchor must reflect the body text's real font/size, not the tiny
+    # leading glyph's — otherwise a rewrite of this block would render in
+    # the glyph's (often non-Latin) font at the glyph's size.
+    source = _make_pdf_with_leading_symbol_glyph("symb", "Built scalable APIs with Python and Django.")
+
+    layout = extract_pdf_layout(source)
+    anchor = _all_blocks(layout)[0].pdf_anchor
+
+    assert anchor.font_name == "Helvetica"
+    assert anchor.font_size == pytest.approx(11.0)
+
+
 def test_wrapped_bullet_anchor_spans_the_full_multi_line_height():
     text = "Developed and deployed new ASP.NET backend and React TypeScript frontend features using Redux."
     source = _make_wrapped_pdf(text)
