@@ -6,7 +6,10 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      # Host port is overridable (POSTGRES_PORT) for machines that already
+      # have a local Postgres bound to 5432; the container always listens
+      # on 5432 internally.
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
