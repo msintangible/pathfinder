@@ -16,11 +16,8 @@
 
     <section class="card">
       <h2 class="card__title">Current page</h2>
-      <div id="detection" class="detection">
-        <span class="badge badge--neutral">Checking…</span>
-      </div>
+      <div id="detection-root"></div>
       <a id="page-url" class="page-url" href="#" target="_blank" rel="noopener"></a>
-      <dl id="signals" class="signals" hidden></dl>
     </section>
 
     <section class="card">
@@ -51,9 +48,7 @@
 
     <section class="card">
       <h2 class="card__title">Job Analysis</h2>
-      <p id="analysis-status" class="status" hidden></p>
-      <button id="analyse-job" class="btn">Analyse this page</button>
-      <pre id="analysis-json" class="json" hidden></pre>
+      <div id="job-analysis-root"></div>
     </section>
 
     <section class="card">
@@ -66,6 +61,8 @@
     </footer>
 
     <script src="sidepanel.js"></script>
+    <script type="module" src="detection/index.js"></script>
+    <script type="module" src="job-analysis/index.js"></script>
     <script type="module" src="profile/index.js"></script>
     <script type="module" src="optimize/index.js"></script>
   </body>
