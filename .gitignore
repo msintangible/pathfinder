@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Locally stored uploaded/generated resume files (placeholder storage until S3 is wired up)
+storage/resumes/
