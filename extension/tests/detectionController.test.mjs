@@ -6,6 +6,7 @@
  * Run with: npm test
  */
 import { JSDOM } from "jsdom";
+import { Message } from "../src/shared/constants.js";
 
 let pass = 0;
 let fail = 0;
@@ -15,6 +16,7 @@ async function test(name, fn) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DEFAULT_URL = "https://boards.greenhouse.io/acme/jobs/1";
 
@@ -31,12 +33,27 @@ const DEFAULT_SIGNALS = {
  *  the registered onUpdated callback is captured, so a test can change what
  *  the "page" looks like and then simulate a tab-update event exactly as
  *  Chrome would fire it, instead of only testing the initial mount. */
-async function mountController({ hasTab = true, detection = null, jobAnalysis = null } = {}) {
+/** Tailoring-flow options (profileId/scrape/analyzeResponse/generateResponse)
+ *  all have working defaults so a test that doesn't care about the tailoring
+ *  flow can ignore them entirely; tests exercising handleTailor override
+ *  just the piece they're checking. `calls` counts ANALYZE_JOB/GENERATE_RESUME
+ *  invocations so a test can assert re-analysis was (or wasn't) skipped. */
+async function mountController({
+  hasTab = true,
+  detection = null,
+  jobAnalysis = null,
+  profileId = "profile-1",
+  scrape = { text: "some job posting text", url: DEFAULT_URL },
+  analyzeResponse = { ok: true, data: { id: "job-fresh", title: "Backend Engineer", company: "Acme" } },
+  generateResponse = { ok: true, data: { ats_score: 80, matched_keywords: [], missing_keywords: [], added_keywords: [], download_url: "/v1/resumes/x/download" } },
+} = {}) {
   const state = { detection, jobAnalysis };
+  const calls = { analyze: 0, generate: 0, savedResumeResults: [] };
   const dom = new JSDOM(
     `<!doctype html><html><body>
       <div id="idle-root" hidden></div>
       <div id="detection-screen-root" hidden></div>
+      <div id="loading-screen-root" hidden></div>
       <div id="legacy-root">
         <div id="detection-root"></div>
       </div>
@@ -50,13 +67,24 @@ async function mountController({ hasTab = true, detection = null, jobAnalysis = 
       query: async () => (hasTab ? [{ id: 1 }] : []),
       onActivated: { addListener: () => {} },
       onUpdated: { addListener: (fn) => { onUpdatedCallback = fn; } },
+      sendMessage: async (_tabId, msg) => (msg.type === "SCRAPE_PAGE" ? scrape : null),
     },
     runtime: {
       sendMessage: async (msg) => {
         if (msg.type === "GET_DETECTION") return { detection: state.detection };
         if (msg.type === "GET_JOB_ANALYSIS") return { jobAnalysis: state.jobAnalysis };
+        if (msg.type === "ANALYZE_JOB") { calls.analyze++; return analyzeResponse; }
+        if (msg.type === "SAVE_JOB_ANALYSIS") {
+          state.jobAnalysis = { id: msg.payload.id, title: msg.payload.title, company: msg.payload.company, url: msg.payload.url };
+          return { ok: true };
+        }
+        if (msg.type === "GENERATE_RESUME") { calls.generate++; return generateResponse; }
+        if (msg.type === "SAVE_RESUME_RESULT") { calls.savedResumeResults.push(msg.payload.data); return { ok: true }; }
         return null;
       },
+    },
+    storage: {
+      local: { get: async (key) => (key === "profileId" && profileId != null ? { profileId } : {}) },
     },
   };
 
@@ -68,7 +96,9 @@ async function mountController({ hasTab = true, detection = null, jobAnalysis = 
     screenRoot: document.getElementById("detection-screen-root"),
     legacyRoot: document.getElementById("legacy-root"),
     idleRoot: document.getElementById("idle-root"),
+    loadingRoot: document.getElementById("loading-screen-root"),
     state,
+    calls,
     /** Simulate Chrome firing tabs.onUpdated, then wait for the async handler. */
     async fireTabUpdated(changeInfo) {
       onUpdatedCallback(1, changeInfo, { id: 1, active: true });
@@ -141,11 +171,93 @@ await test("known ATS: stale job analysis (different URL) is ignored, not shown"
   assert(screenRoot.textContent.includes("Job listing detected"), "falls back to generic heading instead");
 });
 
-await test("known ATS: Tailor my resume is disabled, not silently inert", async () => {
+await test("known ATS: Tailor my resume is enabled and wired to the tailoring flow", async () => {
   const { screenRoot } = await mountController({ detection: knownAts() });
   const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor my resume");
   assert(btn, "button present");
-  assert(btn.disabled === true, "button is genuinely disabled");
+  assert(btn.disabled === false, "button is enabled now that the tailoring flow exists");
+});
+
+await test("known ATS: while the request is genuinely in flight, the loading screen owns the panel", async () => {
+  // GENERATE_RESUME is held open on a manually-resolved promise here (rather
+  // than the mock's normal instant response) specifically so this test can
+  // observe the mid-flight state deterministically — an instantly-resolving
+  // mock finishes the whole analyze→generate→save chain within one microtask
+  // drain, before even a single macrotask tick, which made this state
+  // unobservable with the default mocks.
+  let resolveGenerate;
+  const pendingGenerate = new Promise((res) => { resolveGenerate = res; });
+  const freshJob = { id: "job-1", title: "Backend Engineer", company: "Acme", url: DEFAULT_URL };
+  const { screenRoot, legacyRoot, loadingRoot } = await mountController({
+    detection: knownAts(),
+    jobAnalysis: freshJob,
+    generateResponse: pendingGenerate,
+  });
+
+  const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor my resume");
+  btn.click();
+  await wait(10); // let handleTailor run up to the still-pending GENERATE_RESUME call
+
+  assert(screenRoot.hidden === true, "detection screen hidden once tailoring starts");
+  assert(legacyRoot.hidden === true, "legacy stack not shown yet either — loading screen owns the panel");
+  assert(loadingRoot.hidden === false, "loading screen shown");
+  assert(loadingRoot.textContent.includes(Message.GENERATING), "shows the real generating state, not a blank panel");
+
+  resolveGenerate({ ok: true, data: { ats_score: 90, matched_keywords: [], missing_keywords: [], added_keywords: [] } });
+  await wait(10);
+
+  assert(loadingRoot.hidden === true, "loading screen hidden once the real result actually lands");
+  assert(legacyRoot.hidden === false, "legacy stack revealed only once the real result is in, not before");
+});
+
+await test("known ATS with fresh job analysis: Tailor skips re-analyzing, generates, and reveals the legacy result bridge", async () => {
+  const freshJob = { id: "job-1", title: "Backend Engineer", company: "Acme", url: DEFAULT_URL };
+  const { screenRoot, legacyRoot, loadingRoot, calls } = await mountController({
+    detection: knownAts(),
+    jobAnalysis: freshJob,
+  });
+
+  const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor my resume");
+  btn.click();
+  await wait(20); // let the mocked GENERATE_RESUME promise chain settle
+
+  assert(calls.analyze === 0, "job analysis already fresh — not re-run");
+  assert(calls.generate === 1, "generate called exactly once");
+  assert(calls.savedResumeResults.length === 1 && calls.savedResumeResults[0]?.ats_score === 80,
+    "real result persisted via SAVE_RESUME_RESULT, same as optimize/index.js's own flow");
+  assert(loadingRoot.hidden === true, "loading screen hidden after success");
+  assert(legacyRoot.hidden === false, "legacy stack (bridge to the existing result panel) revealed on success");
+});
+
+await test("known ATS with stale job analysis (different URL): Tailor re-analyzes before generating", async () => {
+  const staleJob = { id: "job-old", title: "Old Job", company: "OldCo", url: "https://example.com/different-page" };
+  const { screenRoot, calls } = await mountController({ detection: knownAts(), jobAnalysis: staleJob });
+
+  const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor my resume");
+  btn.click();
+  await wait(20);
+
+  assert(calls.analyze === 1, "stale analysis (wrong URL) triggers a fresh ANALYZE_JOB, not reuse of the stale id");
+  assert(calls.generate === 1, "generate still runs once, against the freshly analyzed job");
+});
+
+await test("known ATS: a real generation failure shows the actual error, doesn't reveal the legacy stack", async () => {
+  const freshJob = { id: "job-1", title: "Backend Engineer", company: "Acme", url: DEFAULT_URL };
+  const { screenRoot, legacyRoot, loadingRoot } = await mountController({
+    detection: knownAts(),
+    jobAnalysis: freshJob,
+    generateResponse: { ok: false, error: "HTTP 502: backend down" },
+  });
+
+  const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor my resume");
+  btn.click();
+  await wait(20);
+
+  assert(loadingRoot.hidden === false, "loading screen stays up to show the failure");
+  assert(loadingRoot.textContent.includes(Message.GENERATE_FAILED), "reuses the existing failure copy");
+  assert(loadingRoot.textContent.includes("HTTP 502: backend down"), "shows the real error, not a generic one");
+  assert(loadingRoot.querySelector(".load-retry-btn") !== null, "a working retry is offered, not a dead end");
+  assert(legacyRoot.hidden === true, "legacy stack not revealed on failure — nothing to bridge to yet");
 });
 
 await test("unknown ATS: screen shown, 2 bars filled, missing-signals copy names what's absent", async () => {
@@ -162,11 +274,11 @@ await test("unknown ATS: screen shown, 2 bars filled, missing-signals copy names
   assert(!screenRoot.textContent.includes("an application form"), "present signals aren't listed as missing");
 });
 
-await test("unknown ATS: Tailor with what's here is disabled", async () => {
+await test("unknown ATS: Tailor with what's here is enabled and wired to the tailoring flow", async () => {
   const { screenRoot } = await mountController({ detection: unknownAts() });
   const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor with what's here");
   assert(btn, "button present");
-  assert(btn.disabled === true, "button is genuinely disabled");
+  assert(btn.disabled === false, "button is enabled now that the tailoring flow exists");
 });
 
 await test("keywords only: screen shown, 1 bar filled, no keyword pills fabricated", async () => {

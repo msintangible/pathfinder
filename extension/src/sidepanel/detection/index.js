@@ -8,7 +8,19 @@
  *
  * Detection goes through the service worker (TDD 6.1) via GET_DETECTION,
  * re-run whenever the active tab changes or finishes loading.
+ *
+ * The "Tailor my resume"/"Tailor with what's here" buttons drive the real
+ * tailoring pipeline (analyze the job if needed, then generate) behind
+ * loading/index.js's Screen 3. There is no Screen 4 (diff review) yet, so a
+ * success currently falls back to revealing the legacy stack's own Optimize
+ * CV result panel (optimize/index.js's existing renderResult, picked up
+ * automatically via its chrome.storage.onChanged listener once
+ * SAVE_RESUME_RESULT writes the result) — a deliberate temporary bridge,
+ * not a stand-in for building the real diff-review screen.
  */
+
+import { loadProfileId } from "../../shared/profileApi.js";
+import { driveLoading, hideLoadingScreen } from "../loading/index.js";
 
 /** Debug-only: the signals <dl>. Off by default, same as sidepanel.js. */
 const DEBUG_MODE = false;
@@ -17,6 +29,7 @@ const root = document.getElementById("detection-root");
 const screenRoot = document.getElementById("detection-screen-root");
 const legacyRoot = document.getElementById("legacy-root");
 const idleRoot = document.getElementById("idle-root");
+const loadingRoot = document.getElementById("loading-screen-root");
 
 /** Return the active tab (or null). */
 async function getActiveTab() {
@@ -164,6 +177,15 @@ function missingSignalsCopy(signals) {
   return `Pathfinder found this listing, but couldn't find: ${joinWithAnd(missing)}. It can still tailor from what's here.`;
 }
 
+/** jobAnalysis is stored per-tab, not per-URL (see the currentPageBlock doc
+ *  below), so a stale analysis from a previous page on this same tab must
+ *  never be treated as covering the page currently on screen. Shared by
+ *  currentPageBlock (display) and handleTailor (deciding whether to skip
+ *  re-analyzing before generating). */
+function freshJobAnalysis(jobAnalysis, detection) {
+  return jobAnalysis?.url === detection.url ? jobAnalysis : null;
+}
+
 /** Job title / company / ATS name / URL block — the middle three states share
  *  this shape. jobAnalysis is null until the user has run "Analyse this page"
  *  for this tab; there is no free/local way to get a title or company before
@@ -175,7 +197,7 @@ function missingSignalsCopy(signals) {
  *  otherwise show the wrong title/company here. Guarded below by comparing
  *  its stored url against the current detection.url. */
 function currentPageBlock(state, detection, jobAnalysis) {
-  const analysis = jobAnalysis?.url === detection.url ? jobAnalysis : null;
+  const analysis = freshJobAnalysis(jobAnalysis, detection);
 
   const wrap = document.createElement("div");
   wrap.appendChild(headerLabel());
@@ -220,17 +242,18 @@ function spacer() {
   return el;
 }
 
-/** Disabled — the tailoring pipeline (screens 3-7: loading, diff review,
- *  decide, confirm, success) doesn't exist yet. TODO(tailoring-flow): wire
- *  this to trigger ANALYZE_JOB (if not already analysed) then GENERATE_RESUME
- *  once that flow is built. Genuinely disabled rather than just unwired, so
+/** onClick is omitted for the keywords-only state on purpose — the design
+ *  brief explicitly rules out full tailoring from thin data there ("Copy
+ *  keywords instead" is a different, not-yet-built action, not this flow).
+ *  Genuinely disabled rather than just unwired when there's no handler, so
  *  it visually reads as "not available yet" instead of silently doing
  *  nothing on click — same honesty rule as every other screen in this design. */
-function tailorButton(className, text) {
+function tailorButton(className, text, onClick) {
   const btn = document.createElement("button");
   btn.className = className;
   btn.textContent = text;
-  btn.disabled = true;
+  btn.disabled = !onClick;
+  if (onClick) btn.addEventListener("click", onClick);
   return btn;
 }
 
@@ -250,7 +273,7 @@ function buildKnownAtsScreen(detection, jobAnalysis, onViewProfile) {
   main.appendChild(body);
 
   main.appendChild(spacer());
-  main.appendChild(tailorButton("det-btn-primary", "Tailor my resume"));
+  main.appendChild(tailorButton("det-btn-primary", "Tailor my resume", () => handleTailor(detection, jobAnalysis)));
   main.appendChild(link("View profile", onViewProfile));
 
   screen.appendChild(main);
@@ -279,7 +302,9 @@ function buildUnknownAtsScreen(detection, jobAnalysis, onViewProfile) {
   main.appendChild(notice);
 
   main.appendChild(spacer());
-  main.appendChild(tailorButton("det-btn-accent-outline", "Tailor with what's here"));
+  main.appendChild(
+    tailorButton("det-btn-accent-outline", "Tailor with what's here", () => handleTailor(detection, jobAnalysis))
+  );
   main.appendChild(link("View profile", onViewProfile));
 
   screen.appendChild(main);
@@ -320,6 +345,96 @@ function buildKeywordsOnlyScreen(detection, jobAnalysis, onViewProfile) {
   return screen;
 }
 
+// ---------------------------------------------------------------------------
+// Tailoring (Screen 3: loading)
+// ---------------------------------------------------------------------------
+
+/** Scrape + analyze the given tab, same sequence as job-analysis/index.js's
+ *  analyseJob(), and persist it the same way (SAVE_JOB_ANALYSIS, plus
+ *  clearing any resume result left over from a previous job on this tab) so
+ *  the rest of the extension can't tell the difference from a manual
+ *  "Analyse this page" click. Returns the new job id, or throws — driveLoading
+ *  turns a throw into the error screen, so error messages here are meant to
+ *  be read directly by the user. */
+async function analyzeCurrentTab(tab) {
+  let scrape;
+  try {
+    // frameId: 0 pins this to the top-level frame — see job-analysis/index.js.
+    scrape = await chrome.tabs.sendMessage(tab.id, { type: "SCRAPE_PAGE" }, { frameId: 0 });
+  } catch {
+    throw new Error("Can't read this page — reload the tab and try again.");
+  }
+  if (!scrape?.text) throw new Error("No text scraped from this page.");
+
+  const res = await chrome.runtime.sendMessage({
+    type: "ANALYZE_JOB",
+    payload: { raw_text: scrape.text, url: scrape.url },
+  });
+  if (!res?.ok) throw new Error(res?.error || "Analysis failed.");
+
+  await chrome.runtime.sendMessage({
+    type: "SAVE_JOB_ANALYSIS",
+    payload: { tabId: tab.id, id: res.data.id, title: res.data.title, company: res.data.company, url: scrape.url },
+  });
+  await chrome.runtime.sendMessage({
+    type: "SAVE_RESUME_RESULT",
+    payload: { tabId: tab.id, data: null },
+  });
+  return res.data.id;
+}
+
+/** Same GENERATE_RESUME + SAVE_RESUME_RESULT sequence as optimize/index.js's
+ *  optimizeCv(), so the legacy Optimize CV panel picks up this result the
+ *  same way it picks up its own — see the module doc's note on the bridge. */
+async function generateResumeFor(tab, profileId, jobId) {
+  const res = await chrome.runtime.sendMessage({
+    type: "GENERATE_RESUME",
+    payload: { user_profile_id: profileId, job_id: jobId },
+  });
+  if (!res?.ok) throw new Error(res?.error || "Unknown error");
+
+  await chrome.runtime.sendMessage({
+    type: "SAVE_RESUME_RESULT",
+    payload: { tabId: tab.id, data: res.data },
+  });
+  return res.data;
+}
+
+/** "Tailor my resume" / "Tailor with what's here" handler. Analyzes the
+ *  current tab first only if its saved job analysis is missing or stale
+ *  (see freshJobAnalysis), then generates — both driven behind the Screen 3
+ *  loading UI. `detection`/`jobAnalysis` are captured at the moment the
+ *  button was rendered, matching every other handler in this module. */
+async function handleTailor(detection, jobAnalysis) {
+  const analysis = freshJobAnalysis(jobAnalysis, detection);
+  const startTab = await getActiveTab();
+  if (!startTab) return;
+
+  // Claim the panel outright for the loading screen, same reasoning as
+  // showDetectionScreen/showLegacyScreen claiming it for their own states.
+  if (screenRoot) screenRoot.hidden = true;
+  if (legacyRoot) legacyRoot.hidden = true;
+  if (idleRoot) idleRoot.hidden = true;
+
+  const task = async () => {
+    const profileId = await loadProfileId();
+    if (!profileId) throw new Error("Import your profile before tailoring a resume.");
+
+    const jobId = analysis ? analysis.id : await analyzeCurrentTab(startTab);
+    return generateResumeFor(startTab, profileId, jobId);
+  };
+
+  const outcome = await driveLoading(task, { onRetry: () => handleTailor(detection, jobAnalysis) });
+  if (!outcome.ok) return; // error screen (with Try again) is already showing itself
+
+  hideLoadingScreen();
+  // The user may have switched tabs mid-request — if so, chrome.tabs.onActivated
+  // already re-ran loadDetection() for whichever tab is active now, and that
+  // already-correct screen must not be clobbered by this stale request's result.
+  const stillActive = await getActiveTab();
+  if (stillActive?.id === startTab.id) showLegacyScreen();
+}
+
 /** "View profile" has no dedicated screen in this design pass — reveals the
  *  legacy stack, same behaviour as idle/index.js's View profile link. */
 function showLegacyScreen() {
@@ -327,6 +442,10 @@ function showLegacyScreen() {
     screenRoot.hidden = true;
     screenRoot.innerHTML = "";
   }
+  // Defensive: a tailoring run may still have the loading screen up from
+  // before the user switched to this tab — claim the panel outright, same
+  // reasoning as idleRoot below.
+  if (loadingRoot) loadingRoot.hidden = true;
   if (legacyRoot) legacyRoot.hidden = false;
 }
 
@@ -336,6 +455,7 @@ function showDetectionScreen(state, detection, jobAnalysis) {
   // Defensive: the idle screen may still be visible from before the user
   // switched to this tab — claim the panel outright.
   if (idleRoot) idleRoot.hidden = true;
+  if (loadingRoot) loadingRoot.hidden = true;
 
   screenRoot.innerHTML = "";
   const builders = {
