@@ -1,53 +1,261 @@
 <html>
 <head>
 <style>
-    body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #1a1a1a; }
-    h1 { font-size: 18pt; margin-bottom: 2pt; }
-    h2 { font-size: 12pt; margin-top: 14pt; margin-bottom: 4pt; border-bottom: 1px solid #999; }
-    .summary { margin-bottom: 10pt; }
-    .skills { margin-bottom: 4pt; }
-    .entry { margin-bottom: 8pt; }
-    .entry-title { font-weight: bold; }
-    .entry-meta { font-style: italic; color: #444; }
-    ul { margin: 2pt 0; padding-left: 14pt; }
+    @page { margin: 30pt 34pt; }
+    body {
+        font-family: "Aptos", "Calibri", "Arial", sans-serif;
+        font-size: 9.5pt;
+        line-height: 1.35;
+        color: #1a1a1a;
+    }
+    .header {
+        text-align: center;
+        margin-bottom: 16pt;
+    }
+    .name {
+        font-size: 21pt;
+        font-weight: 700;
+        margin: 0 0 2pt 0;
+        line-height: 1.1;
+    }
+    .headline {
+        font-size: 10.5pt;
+        font-weight: 600;
+        margin: 0 0 4pt 0;
+    }
+    .contact {
+        font-size: 8.5pt;
+        color: #333;
+        margin: 0;
+    }
+    .section {
+        margin-top: 12pt;
+    }
+    .section-title {
+        font-size: 10.5pt;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0;
+        border-bottom: 0.7pt solid #777;
+        padding-bottom: 2pt;
+        margin: 0 0 6pt 0;
+    }
+    .summary {
+        margin: 0;
+    }
+    .skill-row {
+        margin: 0 0 3pt 0;
+    }
+    .skill-label {
+        font-weight: 700;
+        display: inline;
+    }
+    .entry {
+        margin-bottom: 8pt;
+    }
+    .entry-head {
+        width: 100%;
+        margin: 0;
+    }
+    .entry-title {
+        font-weight: 700;
+        font-size: 9.8pt;
+    }
+    .entry-date {
+        text-align: right;
+        white-space: nowrap;
+        font-size: 9pt;
+    }
+    .entry-subtitle {
+        margin: 0 0 2pt 0;
+        color: #333;
+        font-size: 9.2pt;
+    }
+    .tech-stack {
+        margin: 1pt 0 3pt 0;
+        font-size: 9pt;
+    }
+    .tech-label {
+        font-weight: 700;
+    }
+    ul {
+        margin: 2pt 0 0 0;
+        padding-left: 13pt;
+    }
+    li {
+        margin: 0 0 2pt 0;
+    }
+    .plain-list {
+        margin: 0;
+        padding-left: 13pt;
+    }
+    strong {
+        font-weight: 700;
+    }
 </style>
 </head>
 <body>
-    {% if headline %}<h1>{{ headline }}</h1>{% endif %}
+    <div class="header">
+        {% if name %}
+        <h1 class="name">{{ name }}</h1>
+        {% elif headline %}
+        <h1 class="name">{{ headline }}</h1>
+        {% endif %}
+
+        {% if name and headline %}
+        <p class="headline">{{ headline }}</p>
+        {% endif %}
+
+        <p class="contact">
+            {% if email %}Email: {{ email }}{% endif %}
+            {% if email and phone %} | {% endif %}
+            {% if phone %}Phone: {{ phone }}{% endif %}
+            {% if (email or phone) and links %} | {% endif %}
+            {% if links.linkedin %}LinkedIn{% endif %}
+            {% if links.linkedin and links.github %} | {% endif %}
+            {% if links.github %}GitHub{% endif %}
+            {% if (links.linkedin or links.github) and links.portfolio %} | {% endif %}
+            {% if links.portfolio %}Portfolio{% endif %}
+        </p>
+    </div>
 
     {% for section in section_order %}
         {% if section == "summary" and summary %}
-        <p class="summary">{{ summary }}</p>
+        <div class="section">
+            <h2 class="section-title">Profile</h2>
+            <p class="summary">{{ summary | emphasis }}</p>
+        </div>
 
-        {% elif section == "skills" and skills %}
-        <h2>Skills</h2>
-        <p class="skills">{{ skills | join(", ") }}</p>
+        {% elif section == "skills" and (skill_groups or skills) %}
+        <div class="section">
+            <h2 class="section-title">Technical Skills</h2>
+            {% if skill_groups %}
+                {% for group in skill_groups %}
+                    {% if group["items"] %}
+                    <p class="skill-row"><span class="skill-label">{{ group.label }}</span><br>{{ group["items"] | join(" &bull; ") }}</p>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+            <p class="skill-row">{{ skills | join(" &bull; ") }}</p>
+            {% endif %}
+        </div>
 
         {% elif section == "experience" and experience %}
-        <h2>Experience</h2>
-        {% for entry in experience %}
-        <div class="entry">
-            <div class="entry-title">{{ entry.title or "" }}{% if entry.company %} — {{ entry.company }}{% endif %}</div>
-            {% if entry.start_date or entry.end_date %}
-            <div class="entry-meta">{{ entry.start_date or "" }} – {{ entry.end_date or "" }}</div>
-            {% endif %}
-            {% if entry.bullets %}
-            <ul>
-                {% for bullet in entry.bullets %}<li>{{ bullet }}</li>{% endfor %}
-            </ul>
-            {% endif %}
+        <div class="section">
+            <h2 class="section-title">Experience</h2>
+            {% for entry in experience %}
+            <div class="entry">
+                <table class="entry-head">
+                    <tr>
+                        <td class="entry-title">{{ entry.title or "" }}</td>
+                        <td class="entry-date">
+                            {% if entry.start_date or entry.end_date %}{{ entry.start_date or "" }} &ndash; {{ entry.end_date or "" }}{% endif %}
+                        </td>
+                    </tr>
+                </table>
+                {% if entry.company or entry.location %}
+                <p class="entry-subtitle">{{ entry.company or "" }}{% if entry.company and entry.location %}, {% endif %}{{ entry.location or "" }}</p>
+                {% endif %}
+                {% if entry.bullets %}
+                <ul>
+                    {% for bullet in entry.bullets %}<li>{{ bullet | emphasis }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
 
         {% elif section == "projects" and projects %}
-        <h2>Projects</h2>
-        {% for project in projects %}
-        <div class="entry">
-            <div class="entry-title">{{ project.name or "" }}</div>
-            {% if project.description %}<div>{{ project.description }}</div>{% endif %}
-            {% if project.technologies %}<div class="entry-meta">{{ project.technologies | join(", ") }}</div>{% endif %}
+        <div class="section">
+            <h2 class="section-title">Projects</h2>
+            {% for project in projects %}
+            <div class="entry">
+                <div class="entry-title">{{ project.name or "" }}</div>
+                {% if project.technologies %}
+                <p class="tech-stack"><span class="tech-label">Tech Stack:</span> {{ project.technologies | join(" &bull; ") }}</p>
+                {% endif %}
+                {% if project.bullets %}
+                <ul>
+                    {% for bullet in project.bullets %}<li>{{ bullet | emphasis }}</li>{% endfor %}
+                </ul>
+                {% elif project.description %}
+                <ul><li>{{ project.description | emphasis }}</li></ul>
+                {% endif %}
+            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
+
+        {% elif section == "education" and education %}
+        <div class="section">
+            <h2 class="section-title">Education</h2>
+            {% for item in education %}
+            <div class="entry">
+                <table class="entry-head">
+                    <tr>
+                        <td class="entry-title">
+                            {{ item.degree or "" }}{% if item.degree and item.field %} {{ item.field }}{% elif item.field %}{{ item.field }}{% endif %}
+                        </td>
+                        <td class="entry-date">
+                            {% if item.start_date or item.end_date %}{{ item.start_date or "" }}{% if item.start_date and item.end_date %} &ndash; {% endif %}{{ item.end_date or "" }}{% endif %}
+                        </td>
+                    </tr>
+                </table>
+                {% if item.institution %}<p class="entry-subtitle">{{ item.institution }}</p>{% endif %}
+                {% if item.grade %}<p class="tech-stack">{{ item.grade }}</p>{% endif %}
+                {% if item.achievements %}
+                <ul>
+                    {% for achievement in item.achievements %}<li>{{ achievement | emphasis }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        {% elif section == "certifications" and certifications %}
+        <div class="section">
+            <h2 class="section-title">Certifications</h2>
+            <ul class="plain-list">
+                {% for cert in certifications %}
+                <li>{{ cert.name or "" }}{% if cert.issuer %}, {{ cert.issuer }}{% endif %}{% if cert.date %} ({{ cert.date }}){% endif %}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        {% elif section == "awards" and awards %}
+        <div class="section">
+            <h2 class="section-title">Awards</h2>
+            <ul class="plain-list">{% for item in awards %}<li>{{ item | emphasis }}</li>{% endfor %}</ul>
+        </div>
+
+        {% elif section == "leadership" and leadership %}
+        <div class="section">
+            <h2 class="section-title">Leadership</h2>
+            <ul class="plain-list">{% for item in leadership %}<li>{{ item | emphasis }}</li>{% endfor %}</ul>
+        </div>
+
+        {% elif section == "volunteering" and volunteering %}
+        <div class="section">
+            <h2 class="section-title">Volunteering</h2>
+            <ul class="plain-list">{% for item in volunteering %}<li>{{ item | emphasis }}</li>{% endfor %}</ul>
+        </div>
+
+        {% elif section == "publications" and publications %}
+        <div class="section">
+            <h2 class="section-title">Publications</h2>
+            <ul class="plain-list">{% for item in publications %}<li>{{ item | emphasis }}</li>{% endfor %}</ul>
+        </div>
+
+        {% elif section == "interests" and interests %}
+        <div class="section">
+            <h2 class="section-title">Interests</h2>
+            <p class="skill-row">{{ interests | join(" &bull; ") }}</p>
+        </div>
+
+        {% elif section == "references" and references %}
+        <div class="section">
+            <h2 class="section-title">References</h2>
+            <ul class="plain-list">{% for item in references %}<li>{{ item }}</li>{% endfor %}</ul>
+        </div>
         {% endif %}
     {% endfor %}
 </body>

@@ -18,16 +18,37 @@ from services.profile_layout_correlator import is_heading_block
 
 logger = logging.getLogger(__name__)
 
-# resume.html only ever renders these sections — order here is the fallback
+# resume.html renders these sections — order here is the fallback
 # used for a section role/heading resume_section_order.py can't confidently
 # classify, and for any section this document simply lacks a heading for.
-DEFAULT_SECTION_ORDER = ["summary", "skills", "experience", "projects"]
+DEFAULT_SECTION_ORDER = [
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "certifications",
+    "awards",
+    "leadership",
+    "volunteering",
+    "publications",
+    "interests",
+    "references",
+]
 
 _SECTION_KEYWORDS = {
     "summary": ("summary", "profile", "objective"),
     "skills": ("skill", "technical", "technolog", "tools"),
     "experience": ("experience", "employment", "work history"),
     "projects": ("project",),
+    "education": ("education", "university", "degree"),
+    "certifications": ("certification", "certificate", "credential"),
+    "awards": ("award", "achievement", "honor", "honour"),
+    "leadership": ("leadership",),
+    "volunteering": ("volunteer", "volunteering"),
+    "publications": ("publication", "research"),
+    "interests": ("interest",),
+    "references": ("reference",),
 }
 
 _ROLE_TO_SECTION = {

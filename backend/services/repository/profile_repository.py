@@ -26,6 +26,7 @@ class ProfileRepository:
         profile = UserProfile(
             user_id=user_id,
             name=analysis.get("name"),
+            email=analysis.get("email"),
             linkedin_url=linkedin_url,
             github_url=github_url,
             portfolio_url=portfolio_url,

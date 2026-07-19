@@ -23,6 +23,8 @@ Rules:
 Schema:
 {
   "name": string or null,
+  "email": string or null,
+  "phone": string or null,
   "headline": string or null,
   "summary": string or null,
   "technical_skills": [string],
@@ -96,6 +98,8 @@ Schema:
   "leadership_experience": [string],
   "volunteer_work": [string],
   "publications": [string],
+  "interests": [string],
+  "references": [string],
   "links": {"key": "url"}
 }"""
 

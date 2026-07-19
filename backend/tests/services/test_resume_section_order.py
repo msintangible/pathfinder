@@ -45,7 +45,8 @@ def test_infers_order_from_docx_headings_in_document_order():
 
     order = infer_section_order(layout_document)
 
-    assert order == ["skills", "summary", "experience", "projects"]
+    assert order[:4] == ["skills", "summary", "experience", "projects"]
+    assert order == ["skills", "summary", "experience", "projects", *DEFAULT_SECTION_ORDER[4:]]
 
 
 def test_unrelated_headings_are_ignored():
@@ -58,8 +59,8 @@ def test_unrelated_headings_are_ignored():
 
     order = infer_section_order(layout_document)
 
-    assert order[0] == "skills"
-    assert "education" not in order
+    assert order[0] == "education"
+    assert order[1] == "skills"
 
 
 def test_missing_categories_are_appended_in_default_order():
@@ -70,7 +71,7 @@ def test_missing_categories_are_appended_in_default_order():
 
     order = infer_section_order(layout_document)
 
-    assert order == ["skills", "summary", "experience", "projects"]
+    assert order == ["skills", "summary", "experience", "projects", *DEFAULT_SECTION_ORDER[4:]]
 
 
 def test_infers_order_from_pdf_role_labels():
@@ -82,7 +83,7 @@ def test_infers_order_from_pdf_role_labels():
 
     order = infer_section_order(layout.model_dump())
 
-    assert order == ["skills", "experience", "summary", "projects"]
+    assert order == ["skills", "experience", "summary", "projects", *DEFAULT_SECTION_ORDER[4:]]
 
 
 def test_infers_pdf_heading_via_keyword_fallback_when_unlabeled():
@@ -118,4 +119,4 @@ def test_duplicate_role_sections_only_counted_once():
 
     order = infer_section_order(layout.model_dump())
 
-    assert order == ["experience", "skills", "summary", "projects"]
+    assert order == ["experience", "skills", "summary", "projects", *DEFAULT_SECTION_ORDER[4:]]

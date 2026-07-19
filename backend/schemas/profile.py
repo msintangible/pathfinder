@@ -112,6 +112,8 @@ class CandidateProfile(BaseModel):
 
     # Identity
     name: str | None = None
+    email: str | None = None
+    phone: str | None = None
     headline: str | None = None
     summary: str | None = None
 
@@ -143,6 +145,8 @@ class CandidateProfile(BaseModel):
     leadership_experience: list[str] = []
     volunteer_work: list[str] = []
     publications: list[str] = []
+    interests: list[str] = []
+    references: list[str] = []
 
     # Links — e.g. {"linkedin": "...", "github": "...", "portfolio": "..."}
     links: dict[str, str] = {}
@@ -155,7 +159,7 @@ class CandidateProfile(BaseModel):
         "development_tools", "work_experience", "education", "projects",
         "github_repositories", "open_source_contributions", "certifications",
         "awards", "achievements", "leadership_experience", "volunteer_work",
-        "publications",
+        "publications", "interests", "references",
         mode="before",
     )
     @classmethod
