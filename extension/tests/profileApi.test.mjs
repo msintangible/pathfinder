@@ -149,5 +149,47 @@ await test("clears the cached token on a 401 so the next call mints a fresh one"
   assert(storedLocal.authToken === undefined, "cached token cleared after 401");
 });
 
+// Regression (Mechanism B): a deliberate FastAPI validation message
+// (`detail`) is real, safe, product-written copy and must still show
+// as-is — this is the "already accidentally okay" half of the fix.
+await test("a deliberate validation message (body.detail) is shown verbatim", async () => {
+  nextResponse = { status: 400, body: { detail: "Only PDF or DOCX files are supported." } };
+  const result = await importProfile({});
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Only PDF or DOCX files are supported.", `error: ${result.error}`);
+});
+
+// The other half: the generic catch-all envelope (backend/app/main.py's
+// unhandled_exception_handler) has no useful `detail` — only ever the same
+// unhelpful "An unexpected error occurred." — so this path is now logged
+// and replaced with plain copy, same as Mechanism A, instead of parroting
+// the backend's own generic boilerplate.
+await test("a generic 500 envelope (no detail) is replaced with plain copy and logged", async () => {
+  nextResponse = {
+    status: 500,
+    body: { error: { code: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred.", requestId: "abc-123" } },
+  };
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  const result = await importProfile({});
+  console.error = originalConsoleError;
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Try again.", `error: ${result.error}`);
+  assert(!result.error.includes("unexpected error"), "never parrots the backend's own generic message");
+  assert(logged.some((l) => l.includes("INTERNAL_SERVER_ERROR")), "real detail still logged for debugging");
+});
+
+await test("a response with no usable body falls back to plain copy, not a bare HTTP status", async () => {
+  nextResponse = { status: 500, body: null };
+  const result = await importProfile({});
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Try again.", `error: ${result.error}`);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

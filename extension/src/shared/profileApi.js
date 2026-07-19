@@ -49,12 +49,26 @@ export async function saveProfileId(profileId) {
   await chrome.storage.local.set({ [StorageKey.PROFILE_ID]: profileId });
 }
 
+/**
+ * `body.detail` is FastAPI's deliberate validation-error contract — e.g.
+ * "Only PDF or DOCX files are supported." (backend/api/v1/profile.py) —
+ * already plain, specific, safe text the backend team wrote on purpose, so
+ * it's shown as-is. `body.error` is the *generic* catch-all exception
+ * envelope (backend/app/main.py's unhandled_exception_handler) — its
+ * `message` is always the same unhelpful "An unexpected error occurred.",
+ * never something worth showing verbatim, so that path (and the bare-
+ * status fallback, when the response has no usable body at all) logs the
+ * real response for debugging and returns plain, calm copy instead — same
+ * Mechanism-A treatment as background/api.js's analyzeJob()/
+ * generateResume(), applied here since this endpoint bypasses the
+ * background script and calls the backend directly (see this file's
+ * header comment) and so doesn't inherit that fix automatically.
+ */
 function errorFromXhr(xhr) {
   const body = xhr.response;
-  if (body && typeof body === "object") {
-    return body.error?.message || body.detail || `HTTP ${xhr.status}`;
-  }
-  return `HTTP ${xhr.status}`;
+  if (body && typeof body === "object" && body.detail) return body.detail;
+  console.error("profile import failed:", xhr.status, JSON.stringify(body));
+  return "Try again.";
 }
 
 /**

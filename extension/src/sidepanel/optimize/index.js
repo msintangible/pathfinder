@@ -193,7 +193,11 @@ async function optimizeCv() {
 
   if (requestTabId !== state.tabId) return;
   state.generating = false;
-  state.error = res?.error || "Unknown error";
+  // background/api.js's generateResume() already logs the real failure
+  // detail and sanitizes res.error before returning — kept as a fixed
+  // "Try again." here (rather than showing res.error directly) only to
+  // avoid doubling up with the Message.GENERATE_FAILED sentence below.
+  state.error = "Try again.";
   render();
 }
 

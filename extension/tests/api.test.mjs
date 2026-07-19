@@ -108,7 +108,7 @@ await test("generateResume self-heals a stale profile_id via /v1/profile/restore
   assert(storedLocal.profileId === "p2", "restored profile id persisted to storage");
 });
 
-await test("generateResume gives up cleanly when there's no cached profile to restore", async () => {
+await test("generateResume gives up cleanly when there's no cached profile to restore, shows plain copy", async () => {
   delete storedLocal.profile;
   queue = [{ status: 404, body: { detail: "Profile not found" } }];
   requests.length = 0;
@@ -116,11 +116,11 @@ await test("generateResume gives up cleanly when there's no cached profile to re
   const result = await generateResume({ user_profile_id: "stale-id", job_id: "j-1" });
 
   assert(result.ok === false, "not ok");
-  assert(result.error.includes("Profile not found"), `error message: ${result.error}`);
+  assert(result.error === "Couldn't find your profile — try re-importing it.", `error message: ${result.error}`);
   assert(!requests.some((r) => r.url.endsWith("/v1/profile/restore")), "restore not attempted without a cached profile");
 });
 
-await test("generateResume leaves a non-profile 404 unchanged", async () => {
+await test("generateResume: a non-profile 404 doesn't trigger self-heal, and shows plain copy not the raw detail", async () => {
   storedLocal.profile = { name: "Jane Doe" };
   queue = [{ status: 404, body: { detail: "Job not found" } }];
   requests.length = 0;
@@ -128,8 +128,49 @@ await test("generateResume leaves a non-profile 404 unchanged", async () => {
   const result = await generateResume({ user_profile_id: "p-1", job_id: "bad-job" });
 
   assert(result.ok === false, "not ok");
-  assert(result.error.includes("Job not found"), `error message: ${result.error}`);
+  assert(result.error === "Couldn't generate your resume. Try again.", `error message: ${result.error}`);
   assert(!requests.some((r) => r.url.endsWith("/v1/profile/restore")), "restore not attempted for a non-profile 404");
+});
+
+// Regression: a real 500 from backend/app/main.py's generic exception
+// handler — this exact shape (Gemini quota exhaustion, wrapped in the
+// generic INTERNAL_SERVER_ERROR envelope since FastAPI's catch-all always
+// returns 500 regardless of the real underlying status) is what leaked
+// verbatim into three separate UI files before the fix moved here.
+const REAL_BACKEND_500_BODY = JSON.stringify({
+  error: { code: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred.", details: [], requestId: "abc-123" },
+});
+
+await test("analyzeJob: a real raw 500 never reaches the caller, and is logged for debugging", async () => {
+  nextResponse = { status: 500, body: JSON.parse(REAL_BACKEND_500_BODY) };
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  const result = await analyzeJob({ raw_text: "We are hiring." });
+  console.error = originalConsoleError;
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Couldn't read this job posting. Try again.", `error: ${result.error}`);
+  assert(!result.error.includes("HTTP"), "never the raw HTTP status");
+  assert(!result.error.includes("{"), "never the raw JSON body");
+  assert(logged.some((l) => l.includes("INTERNAL_SERVER_ERROR")), "real detail still logged for debugging");
+});
+
+await test("generateResume: a real raw 500 never reaches the caller, and is logged for debugging", async () => {
+  nextResponse = { status: 500, body: JSON.parse(REAL_BACKEND_500_BODY) };
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  const result = await generateResume({ user_profile_id: "p-1", job_id: "j-1" });
+  console.error = originalConsoleError;
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Couldn't generate your resume. Try again.", `error: ${result.error}`);
+  assert(!result.error.includes("HTTP"), "never the raw HTTP status");
+  assert(!result.error.includes("{"), "never the raw JSON body");
+  assert(logged.some((l) => l.includes("INTERNAL_SERVER_ERROR")), "real detail still logged for debugging");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

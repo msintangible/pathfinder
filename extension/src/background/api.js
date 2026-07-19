@@ -43,6 +43,24 @@ function networkError(err) {
   return { ok: false, error: err?.message ?? "Network error" };
 }
 
+/**
+ * Every consumer of analyzeJob()/generateResume() (detection/index.js,
+ * optimize/index.js, job-analysis/index.js) used to unpack a failed
+ * response's raw "HTTP {status}: {response body}" text and display it
+ * directly — three separate UI files independently had the same bug,
+ * because the raw text originated here and nothing sanitized it before it
+ * left this file. Fixed at the source instead: every failure path in this
+ * file logs the real detail once, here, and returns plain, calm copy
+ * (docs/pathfinder-uiux-requirements.md's Voice rule: "No raw error
+ * strings/JSON ever shown to users") — so every current and future
+ * consumer inherits safe behavior automatically, with nothing to remember
+ * to do on the display side.
+ */
+function sanitizedFailure(context, rawDetail, plainMessage) {
+  console.error(`${context} failed:`, rawDetail);
+  return { ok: false, error: plainMessage };
+}
+
 export async function checkHealth() {
   try {
     const base = await getBaseUrl();
@@ -73,7 +91,11 @@ export async function analyzeJob({ raw_text, url } = {}) {
     });
     if (!res.ok) {
       if (res.status === 401) await clearAuthToken();
-      return { ok: false, error: `HTTP ${res.status}: ${await res.text()}` };
+      return sanitizedFailure(
+        "ANALYZE_JOB",
+        `HTTP ${res.status}: ${await res.text()}`,
+        "Couldn't read this job posting. Try again."
+      );
     }
     return { ok: true, data: await res.json() };
   } catch (err) {
@@ -137,16 +159,26 @@ export async function generateResume({ user_profile_id, job_id } = {}) {
 
       if (body?.detail === "Profile not found") {
         const restoredId = await restoreProfile(base, token);
-        if (!restoredId) return { ok: false, error: "HTTP 404: Profile not found" };
+        if (!restoredId) {
+          return sanitizedFailure(
+            "GENERATE_RESUME",
+            "HTTP 404: Profile not found (self-heal failed, no cached profile to restore from)",
+            "Couldn't find your profile — try re-importing it."
+          );
+        }
         res = await postGenerate(base, token, restoredId, job_id);
       } else {
-        return { ok: false, error: `HTTP 404: ${rawBody}` };
+        return sanitizedFailure("GENERATE_RESUME", `HTTP 404: ${rawBody}`, "Couldn't generate your resume. Try again.");
       }
     }
 
     if (!res.ok) {
       if (res.status === 401) await clearAuthToken();
-      return { ok: false, error: `HTTP ${res.status}: ${await res.text()}` };
+      return sanitizedFailure(
+        "GENERATE_RESUME",
+        `HTTP ${res.status}: ${await res.text()}`,
+        "Couldn't generate your resume. Try again."
+      );
     }
     return { ok: true, data: await res.json() };
   } catch (err) {

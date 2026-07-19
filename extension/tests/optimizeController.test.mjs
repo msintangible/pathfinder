@@ -217,12 +217,33 @@ await test("generate failure: shows GENERATE_FAILED, re-enables button, no resul
   await flush();
 
   const err = root.querySelector(".status--err");
-  assert(err?.textContent === `${Message.GENERATE_FAILED} HTTP 500: boom`, `error text: ${err?.textContent}`);
+  assert(err?.textContent === `${Message.GENERATE_FAILED} Try again.`, `error text: ${err?.textContent}`);
   const btn = root.querySelector("#optimize-cv");
   assert(btn.disabled === false, "button re-enabled");
   assert(btn.textContent === Message.OPTIMIZE_CV, "still says Optimize CV, no result was saved");
   const resultEl = root.querySelector("#optimize-result");
   assert(!resultEl || resultEl.children.length === 0, "no result rendered");
+});
+
+await test("generate failure: never shows the raw HTTP/JSON detail regardless of what background/api.js returns", async () => {
+  // Regression test. Sanitization now happens once, centrally, in
+  // background/api.js's generateResume() (see api.test.mjs's own
+  // regression test for that layer, including the "logged for debugging"
+  // half of this). This panel no longer inspects res.error's content at
+  // all — it always shows a fixed "Try again." — so this test mocks a
+  // worst-case raw response on purpose, to prove that even if something
+  // upstream regressed, this panel still can't leak it.
+  const rawError = 'HTTP 500: {"error":{"code":"INTERNAL_SERVER_ERROR","message":"An unexpected error occurred."}}';
+  const generateResult = { ok: false, error: rawError };
+
+  const { root } = await mountController({ profileId: "p1", jobAnalysis: job, generateResult });
+  root.querySelector("#optimize-cv").click();
+  await flush();
+
+  const err = root.querySelector(".status--err");
+  assert(!err.textContent.includes("HTTP 500"), "never shows the raw HTTP status");
+  assert(!err.textContent.includes("INTERNAL_SERVER_ERROR"), "never shows the raw JSON body");
+  assert(err.textContent.includes(Message.GENERATE_FAILED), "still shows the plain failure copy");
 });
 
 await test("restore on reopen: renders a cached result without calling GENERATE_RESUME", async () => {

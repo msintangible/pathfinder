@@ -354,11 +354,10 @@ function buildKeywordsOnlyScreen(detection, jobAnalysis, onViewProfile) {
  *  clearing any resume result left over from a previous job on this tab) so
  *  the rest of the extension can't tell the difference from a manual
  *  "Analyse this page" click. Returns the new job id, or throws — driveLoading
- *  turns a throw into the error screen, so error messages here are meant to
- *  be read directly by the user, which is why res.error (raw "HTTP 500: {...}"
- *  text from background/api.js) is logged for debugging but never thrown
- *  as-is — see docs/pathfinder-uiux-requirements.md's Voice rule: "No raw
- *  error strings/JSON ever shown to users". */
+ *  turns a throw into the error screen. res.error is already safe,
+ *  plain-language text by the time it gets here: background/api.js's
+ *  analyzeJob() logs the real failure detail and sanitizes it before
+ *  returning, so every caller (this one included) can throw it directly. */
 async function analyzeCurrentTab(tab) {
   let scrape;
   try {
@@ -373,10 +372,7 @@ async function analyzeCurrentTab(tab) {
     type: "ANALYZE_JOB",
     payload: { raw_text: scrape.text, url: scrape.url },
   });
-  if (!res?.ok) {
-    console.error("ANALYZE_JOB failed:", res?.error);
-    throw new Error("Couldn't read this job posting. Try again.");
-  }
+  if (!res?.ok) throw new Error(res?.error || "Couldn't read this job posting. Try again.");
 
   await chrome.runtime.sendMessage({
     type: "SAVE_JOB_ANALYSIS",
@@ -392,17 +388,13 @@ async function analyzeCurrentTab(tab) {
 /** Same GENERATE_RESUME + SAVE_RESUME_RESULT sequence as optimize/index.js's
  *  optimizeCv(), so the legacy Optimize CV panel picks up this result the
  *  same way it picks up its own — see the module doc's note on the bridge.
- *  Same raw-error handling as analyzeCurrentTab above: res.error is logged,
- *  never thrown as-is. */
+ *  Same already-sanitized res.error as analyzeCurrentTab above. */
 async function generateResumeFor(tab, profileId, jobId) {
   const res = await chrome.runtime.sendMessage({
     type: "GENERATE_RESUME",
     payload: { user_profile_id: profileId, job_id: jobId },
   });
-  if (!res?.ok) {
-    console.error("GENERATE_RESUME failed:", res?.error);
-    throw new Error("Couldn't generate your resume. Try again.");
-  }
+  if (!res?.ok) throw new Error(res?.error || "Couldn't generate your resume. Try again.");
 
   await chrome.runtime.sendMessage({
     type: "SAVE_RESUME_RESULT",
