@@ -355,7 +355,10 @@ function buildKeywordsOnlyScreen(detection, jobAnalysis, onViewProfile) {
  *  the rest of the extension can't tell the difference from a manual
  *  "Analyse this page" click. Returns the new job id, or throws — driveLoading
  *  turns a throw into the error screen, so error messages here are meant to
- *  be read directly by the user. */
+ *  be read directly by the user, which is why res.error (raw "HTTP 500: {...}"
+ *  text from background/api.js) is logged for debugging but never thrown
+ *  as-is — see docs/pathfinder-uiux-requirements.md's Voice rule: "No raw
+ *  error strings/JSON ever shown to users". */
 async function analyzeCurrentTab(tab) {
   let scrape;
   try {
@@ -370,7 +373,10 @@ async function analyzeCurrentTab(tab) {
     type: "ANALYZE_JOB",
     payload: { raw_text: scrape.text, url: scrape.url },
   });
-  if (!res?.ok) throw new Error(res?.error || "Analysis failed.");
+  if (!res?.ok) {
+    console.error("ANALYZE_JOB failed:", res?.error);
+    throw new Error("Couldn't read this job posting. Try again.");
+  }
 
   await chrome.runtime.sendMessage({
     type: "SAVE_JOB_ANALYSIS",
@@ -385,13 +391,18 @@ async function analyzeCurrentTab(tab) {
 
 /** Same GENERATE_RESUME + SAVE_RESUME_RESULT sequence as optimize/index.js's
  *  optimizeCv(), so the legacy Optimize CV panel picks up this result the
- *  same way it picks up its own — see the module doc's note on the bridge. */
+ *  same way it picks up its own — see the module doc's note on the bridge.
+ *  Same raw-error handling as analyzeCurrentTab above: res.error is logged,
+ *  never thrown as-is. */
 async function generateResumeFor(tab, profileId, jobId) {
   const res = await chrome.runtime.sendMessage({
     type: "GENERATE_RESUME",
     payload: { user_profile_id: profileId, job_id: jobId },
   });
-  if (!res?.ok) throw new Error(res?.error || "Unknown error");
+  if (!res?.ok) {
+    console.error("GENERATE_RESUME failed:", res?.error);
+    throw new Error("Couldn't generate your resume. Try again.");
+  }
 
   await chrome.runtime.sendMessage({
     type: "SAVE_RESUME_RESULT",

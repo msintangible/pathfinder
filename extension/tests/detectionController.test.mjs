@@ -241,23 +241,58 @@ await test("known ATS with stale job analysis (different URL): Tailor re-analyze
   assert(calls.generate === 1, "generate still runs once, against the freshly analyzed job");
 });
 
-await test("known ATS: a real generation failure shows the actual error, doesn't reveal the legacy stack", async () => {
+await test("known ATS: a real generation failure shows plain-language copy, never the raw HTTP/JSON detail", async () => {
+  // Regression test: background/api.js's generateResume() surfaces backend
+  // failures as `res.error = "HTTP {status}: {raw response body}"` — a real
+  // 500 looked like `HTTP 500: {"error":{"code":"INTERNAL_SERVER_ERROR",...}}`.
+  // That must never reach the screen — docs/pathfinder-uiux-requirements.md's
+  // Voice rule is explicit: "No raw error strings/JSON ever shown to users."
   const freshJob = { id: "job-1", title: "Backend Engineer", company: "Acme", url: DEFAULT_URL };
+  const originalConsoleError = console.error;
+  const loggedErrors = [];
+  console.error = (...args) => loggedErrors.push(args.join(" "));
+
   const { screenRoot, legacyRoot, loadingRoot } = await mountController({
     detection: knownAts(),
     jobAnalysis: freshJob,
-    generateResponse: { ok: false, error: "HTTP 502: backend down" },
+    generateResponse: { ok: false, error: 'HTTP 500: {"error":{"code":"INTERNAL_SERVER_ERROR","message":"An unexpected error occurred."}}' },
   });
 
   const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor my resume");
   btn.click();
   await wait(20);
+  console.error = originalConsoleError;
 
   assert(loadingRoot.hidden === false, "loading screen stays up to show the failure");
   assert(loadingRoot.textContent.includes(Message.GENERATE_FAILED), "reuses the existing failure copy");
-  assert(loadingRoot.textContent.includes("HTTP 502: backend down"), "shows the real error, not a generic one");
+  assert(loadingRoot.textContent.includes("Couldn't generate your resume. Try again."), "shows plain-language copy");
+  assert(!loadingRoot.textContent.includes("HTTP 500"), "never shows the raw HTTP status");
+  assert(!loadingRoot.textContent.includes("INTERNAL_SERVER_ERROR"), "never shows the raw JSON body");
   assert(loadingRoot.querySelector(".load-retry-btn") !== null, "a working retry is offered, not a dead end");
   assert(legacyRoot.hidden === true, "legacy stack not revealed on failure — nothing to bridge to yet");
+  assert(loggedErrors.some((line) => line.includes("INTERNAL_SERVER_ERROR")), "real detail still logged for debugging, just never shown to the user");
+});
+
+await test("known ATS with stale job analysis: a real analyze failure also shows plain-language copy only", async () => {
+  const staleJob = { id: "job-old", title: "Old Job", company: "OldCo", url: "https://example.com/different-page" };
+  const originalConsoleError = console.error;
+  console.error = () => {};
+
+  const { screenRoot, legacyRoot, loadingRoot } = await mountController({
+    detection: knownAts(),
+    jobAnalysis: staleJob, // stale (different URL) -> forces analyzeCurrentTab to run
+    analyzeResponse: { ok: false, error: "HTTP 502: <html>Bad Gateway</html>" },
+  });
+
+  const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Tailor my resume");
+  btn.click();
+  await wait(20);
+  console.error = originalConsoleError;
+
+  assert(loadingRoot.textContent.includes("Couldn't read this job posting. Try again."), "shows plain-language copy");
+  assert(!loadingRoot.textContent.includes("HTTP 502"), "never shows the raw HTTP status");
+  assert(!loadingRoot.textContent.includes("<html>"), "never shows raw response markup");
+  assert(legacyRoot.hidden === true, "legacy stack not revealed on failure");
 });
 
 await test("unknown ATS: screen shown, 2 bars filled, missing-signals copy names what's absent", async () => {
