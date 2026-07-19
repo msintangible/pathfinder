@@ -64,19 +64,33 @@ _PATCHES_RESPONSE = {
 }
 
 _EXPECTED_OPTIMIZED_RESUME = {
+    "name": None,
+    "email": None,
+    "phone": None,
     "headline": "Senior Backend Engineer",
     "summary": "Backend engineer with Python and AWS experience.",
+    "links": {},
     "skills": ["Python", "AWS"],
+    "skill_groups": [{"label": "Technical", "items": ["Python", "AWS"]}],
     "experience": [
         {
             "title": "Software Engineer",
             "company": "Acme Corp",
+            "location": None,
             "start_date": "2020",
             "end_date": "Present",
             "bullets": ["Built scalable APIs with Python and AWS"],
         }
     ],
     "projects": [],
+    "education": [],
+    "certifications": [],
+    "awards": [],
+    "leadership": [],
+    "volunteering": [],
+    "publications": [],
+    "interests": [],
+    "references": [],
     "changes_summary": [
         "Emphasized your Python and AWS experience since the job requires both.",
         "Could not address Terraform — no matching experience was found in your profile.",

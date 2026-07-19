@@ -39,6 +39,9 @@ _MEDIA_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
+# TEMP DEBUG FLAG — set back to False to restore in-place rendering.
+_DEBUG_FORCE_TEMPLATE_RENDER = True
+
 
 def _profile_to_dict(profile: UserProfile) -> dict:
     return CandidateProfile.model_validate(profile, from_attributes=True).model_dump(mode="json")
@@ -59,6 +62,12 @@ def _render_resume(profile: UserProfile, result: dict) -> tuple[bytes, str, bool
     still uses profile.layout_document's inferred section order (see
     resume_section_order.py) even when it can't preserve real formatting.
     """
+    # TEMP DEBUG: force the generic template renderer, bypassing in-place
+    # rendering entirely. Flip back to False when done comparing.
+    if _DEBUG_FORCE_TEMPLATE_RENDER:
+        section_order = infer_section_order(profile.layout_document)
+        return render_pdf_template(result["optimized_resume"], section_order=section_order), "pdf", False
+
     if result["layout_preserved"] and profile.source_document_path:
         source_bytes = Path(profile.source_document_path).read_bytes()
         render_layout = ResumeLayoutDocument.model_validate(result["render_layout"])
