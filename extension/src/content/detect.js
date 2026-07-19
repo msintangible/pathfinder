@@ -32,6 +32,47 @@ const ATS_URL_PATTERNS = [
   { re: /seek\.com\.au\/job\//, weight: 0.5, name: "Seek" },
 ];
 
+// Hosts that can never be a job posting, regardless of what Tier 2's
+// keyword-based signals find on the page — confirmed false-positive
+// generators, not a hypothetical list.
+//
+// Root cause: hasJobHeadings()/hasJobBodyContent()/hasJobMetaTags() match
+// job-posting *vocabulary* anywhere on the page, not page structure. On an
+// AI chat tool, asking the assistant to review a job posting or resume
+// makes the assistant's own rendered markdown response produce real
+// <h2>/<h3> headings ("About the role", "Requirements") and prose full of
+// job-posting terms — the chat transcript reads exactly like a job posting
+// to a keyword scanner, even though the page itself is a conversation.
+// Verified with a synthetic claude.ai fixture: Tier 2 alone summed to 0.45
+// confidence (isJobPage: true) on a page with zero actual job content.
+//
+// A more general fix (require at least one structural/"hard" signal —
+// urlMatch, jsonLd, or applicationForm — before Tier 2's keyword signals
+// alone can cross the isJobPage threshold) was tried and reverted: it also
+// demoted tests/fixtures/generic-no-ats.html, a real single-company careers
+// page with no ATS platform, no JobPosting schema, and no captured
+// application form, which relies entirely on Tier 2 signals and is a
+// legitimate case Pathfinder should still detect. Distinguishing "a page
+// that IS a job posting relying only on keywords" from "a page that just
+// TALKS ABOUT one" needs real fixtures for the other vocabulary-false-
+// positive shapes (career-advice articles, job-hunting forum threads) to
+// validate against before it can be safely generalized — tracked as
+// follow-up work, not solved by this denylist.
+const NON_JOB_HOSTS = [
+  /(^|\.)claude\.ai$/,
+  /(^|\.)chatgpt\.com$/,
+  /(^|\.)chat\.openai\.com$/,
+  /(^|\.)gemini\.google\.com$/,
+  /(^|\.)perplexity\.ai$/,
+];
+
+/** True if the current page's host can never be a job posting — see
+ *  NON_JOB_HOSTS above for why this exists. */
+function isKnownNonJobHost() {
+  const host = location.hostname.toLowerCase();
+  return NON_JOB_HOSTS.some((re) => re.test(host));
+}
+
 // Field names/ids/placeholders that only appear on job application forms.
 const APPLICATION_FIELD_RE =
   /resume|curriculum.?vitae|\bcv\b|cover.?letter|first.?name|last.?name|linkedin|github|portfolio|work.?auth/i;
@@ -58,18 +99,19 @@ const JOB_HEADING_KEYWORDS = [
 ];
 
 // Body-text keywords — require multiple matches to avoid false positives.
+// "remote" and "we offer" were dropped: both are common in general prose
+// about jobs/careers (news articles, chat conversations, forum threads)
+// that isn't an actual job posting, not just in real ones.
 const JOB_BODY_KEYWORDS = [
   "years of experience",
   "bachelor",
   "full-time",
   "part-time",
-  "remote",
   "hybrid",
   "on-site",
   "salary",
   "compensation",
   "equal opportunity",
-  "we offer",
   "benefits include",
 ];
 
@@ -120,10 +162,13 @@ function hasApplicationForm() {
   return false;
 }
 
-/** Tier 2c — headings contain job-description language. */
+/** Tier 2c — headings contain job-description language. `button` is
+ *  deliberately excluded: buttons are UI chrome, not content headings, and
+ *  scanning them widens false-positive exposure to any unrelated page with
+ *  an "Apply"/"Submit"-labeled button (filters, coupons, forms). */
 function hasJobHeadings() {
   const text = Array.from(
-    querySelectorAllDeep(document, "h1, h2, h3, h4, [role='heading'], button")
+    querySelectorAllDeep(document, "h1, h2, h3, h4, [role='heading']")
   )
     .map((el) => el.textContent?.trim().toLowerCase() || "")
     .join(" ");
@@ -157,6 +202,17 @@ function hasJobMetaTags() {
 // ---------------------------------------------------------------------------
 
 function detect() {
+  if (isKnownNonJobHost()) {
+    return {
+      isJobPage: false,
+      confidence: 0,
+      atsName: null,
+      signals: { urlMatch: false, jsonLd: false, applicationForm: false, jobKeywords: false, metaTags: false },
+      url: location.href,
+      detectedAt: new Date().toISOString(),
+    };
+  }
+
   const tier1 = urlScore();
   const jsonLd = hasJobPostingJsonLd();
   const applicationForm = hasApplicationForm();

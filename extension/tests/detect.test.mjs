@@ -52,7 +52,7 @@ function makeDetector(html, url = "https://example.com/careers/some-role", setup
   if (setup) setup(window.document);
   const factory = new Function(
     "document", "location",
-    `${SRC}\nreturn { detect, urlScore, matchedAtsName, hasJobPostingJsonLd, hasApplicationForm, hasJobHeadings, hasJobBodyContent, hasJobMetaTags };`
+    `${SRC}\nreturn { detect, urlScore, matchedAtsName, isKnownNonJobHost, hasJobPostingJsonLd, hasApplicationForm, hasJobHeadings, hasJobBodyContent, hasJobMetaTags };`
   );
   return factory(window.document, window.location);
 }
@@ -276,9 +276,9 @@ test("hasJobHeadings: true for a heading rendered inside an open shadow root", (
 // ---------------------------------------------------------------------------
 // Tier 2d — hasJobBodyContent()
 // ---------------------------------------------------------------------------
-test("hasJobBodyContent: true at the 2-keyword threshold (years of experience + remote)", () => {
+test("hasJobBodyContent: true at the 2-keyword threshold (years of experience + full-time)", () => {
   const html = `<!doctype html><html><head><title>x</title></head><body>
-    <p>We're looking for someone with 5+ years of experience working remote.</p>
+    <p>We're looking for someone with 5+ years of experience for this full-time position.</p>
   </body></html>`;
   const d = makeDetector(html);
   assert(d.hasJobBodyContent() === true, "expected true at threshold");
@@ -383,6 +383,66 @@ test("false positive guard: contact page with newsletter form + unrelated headin
   const result = d.detect();
   assert(result.isJobPage === false, `expected non-job page, got confidence ${result.confidence}`);
   assert(result.signals.applicationForm === false, "applicationForm signal must be false");
+});
+
+test("isKnownNonJobHost: recognizes each known AI chat host", () => {
+  for (const url of [
+    "https://claude.ai/chat/abc123",
+    "https://chatgpt.com/c/abc123",
+    "https://chat.openai.com/c/abc123",
+    "https://gemini.google.com/app/abc123",
+    "https://perplexity.ai/search/abc123",
+  ]) {
+    const d = makeDetector(BLANK, url);
+    assert(d.isKnownNonJobHost() === true, `expected ${url} to be a known non-job host`);
+  }
+});
+
+test("isKnownNonJobHost: an unrelated host is not flagged", () => {
+  const d = makeDetector(BLANK, "https://smallstartup.example.com/careers/data-analyst");
+  assert(d.isKnownNonJobHost() === false, "unrelated host must not match");
+});
+
+// A conversation on an AI chat tool where the assistant reviews a job
+// posting: the response renders real headings/prose full of job-posting
+// vocabulary, even though the page is a chat transcript, not a posting.
+// See NON_JOB_HOSTS's comment in detect.js for the full mechanism.
+const AI_CHAT_TRANSCRIPT_ABOUT_A_JOB = `<!doctype html><html><head><title>Data Analyst Job Description Review</title></head><body>
+  <div class="chat-transcript">
+    <div class="human-turn">Can you help me tailor my resume for this role? Here's the posting:
+      Data Analyst - Full-time. Bachelor's degree required, 3+ years of experience.
+      Competitive compensation and benefits include health insurance.
+    </div>
+    <div class="assistant-turn">
+      <h2>About the role</h2>
+      <p>This looks like a solid Data Analyst position. Here's a breakdown:</p>
+      <h3>Requirements</h3>
+      <ul><li>Bachelor's degree</li><li>3+ years of experience</li></ul>
+      <h3>What you'll do</h3>
+      <p>You will analyze datasets and build dashboards for stakeholders.</p>
+    </div>
+  </div>
+</body></html>`;
+
+test("false positive guard: a claude.ai conversation about a job posting is never flagged, regardless of keyword signals", () => {
+  const d = makeDetector(AI_CHAT_TRANSCRIPT_ABOUT_A_JOB, "https://claude.ai/chat/abc123");
+  const result = d.detect();
+  assert(result.isJobPage === false, `expected non-job page, got confidence ${result.confidence}`);
+  assert(result.confidence === 0, `expected confidence 0 (denylisted host short-circuits), got ${result.confidence}`);
+  for (const key of ["urlMatch", "jsonLd", "applicationForm", "jobKeywords", "metaTags"]) {
+    assert(result.signals[key] === false, `expected signals.${key} false on a denylisted host`);
+  }
+});
+
+test("false positive guard: the same job-vocabulary-heavy content on a non-denylisted host still detects normally", () => {
+  // Regression guard: the denylist must be scoped to the specific known
+  // hosts, not a general suppression of Tier 2's keyword signals — a real
+  // single-company careers page with the exact same shape of content
+  // (headings + body keywords + a matching title, no ATS/schema/form) must
+  // keep detecting, the way tests/fixtures/generic-no-ats.html does.
+  const d = makeDetector(AI_CHAT_TRANSCRIPT_ABOUT_A_JOB, "https://smallstartup.example.com/careers/data-analyst");
+  const result = d.detect();
+  assert(result.isJobPage === true, `expected job page detected, got confidence ${result.confidence}`);
 });
 
 test("detect(): returns the stable contract (isJobPage/confidence/signals/url/detectedAt)", () => {
