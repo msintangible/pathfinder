@@ -217,5 +217,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Locally stored uploaded/generated resume files (placeholder storage until S3 is wired up)
+# Locally stored uploaded/generated resume files (placeholder storage until S3 is wired up).
+# Two paths: LocalResumeStorage resolves relative to the process's cwd, which
+# is repo root per some workflows and backend/ per SETUP.md's uvicorn command.
 storage/resumes/
+backend/storage/resumes/
