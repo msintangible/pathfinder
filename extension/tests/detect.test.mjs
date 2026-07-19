@@ -52,7 +52,7 @@ function makeDetector(html, url = "https://example.com/careers/some-role", setup
   if (setup) setup(window.document);
   const factory = new Function(
     "document", "location",
-    `${SRC}\nreturn { detect, urlScore, hasJobPostingJsonLd, hasApplicationForm, hasJobHeadings, hasJobBodyContent, hasJobMetaTags };`
+    `${SRC}\nreturn { detect, urlScore, matchedAtsName, hasJobPostingJsonLd, hasApplicationForm, hasJobHeadings, hasJobBodyContent, hasJobMetaTags };`
   );
   return factory(window.document, window.location);
 }
@@ -102,6 +102,16 @@ test("urlScore: linkedin.com homepage (no /jobs/ path) scores 0", () => {
 test("urlScore: unrelated site scores 0", () => {
   const d = makeDetector(BLANK, "https://example.com/careers/some-role");
   assert(d.urlScore() === 0, `got ${d.urlScore()}`);
+});
+
+test("matchedAtsName: boards.greenhouse.io reports 'Greenhouse'", () => {
+  const d = makeDetector(BLANK, "https://boards.greenhouse.io/acme/jobs/12345");
+  assert(d.matchedAtsName() === "Greenhouse", `got ${d.matchedAtsName()}`);
+});
+
+test("matchedAtsName: unrelated site reports null", () => {
+  const d = makeDetector(BLANK, "https://example.com/careers/some-role");
+  assert(d.matchedAtsName() === null, `got ${d.matchedAtsName()}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -343,6 +353,18 @@ test("detect(): below-threshold page (0 signals) is not a job page", () => {
   const result = d.detect();
   assert(result.confidence === 0, `confidence: ${result.confidence}`);
   assert(result.isJobPage === false, "expected isJobPage false");
+});
+
+test("detect(): atsName is populated for a known ATS URL", () => {
+  const d = makeDetector(BLANK, "https://jobs.lever.co/acme/12345");
+  const result = d.detect();
+  assert(result.atsName === "Lever", `got ${result.atsName}`);
+});
+
+test("detect(): atsName is null when the URL doesn't match a known ATS", () => {
+  const d = makeDetector(BLANK, "https://example.com/careers/some-role");
+  const result = d.detect();
+  assert(result.atsName === null, `got ${result.atsName}`);
 });
 
 test("false positive guard: contact page with newsletter form + unrelated heading stays under threshold", () => {

@@ -9,25 +9,27 @@
 
 // Tier 1 — known ATS platforms and job-board URL patterns.
 // Each entry carries a weight so high-confidence ATS hosts outweigh
-// generic job boards that might host non-job pages too.
+// generic job boards that might host non-job pages too. `name` is the
+// platform label shown on the Known ATS screen (e.g. "Data Analyst ·
+// Reperio Human Capital · Greenhouse") — display-only, doesn't affect scoring.
 const ATS_URL_PATTERNS = [
-  { re: /\.greenhouse\.io(\/|$)/, weight: 0.6 },
-  { re: /boards\.greenhouse\.io(\/|$)/, weight: 0.6 },
-  { re: /jobs\.lever\.co(\/|$)/, weight: 0.6 },
-  { re: /\.myworkdayjobs\.com(\/|$)/, weight: 0.6 },
-  { re: /\.icims\.com(\/|$)/, weight: 0.6 },
-  { re: /\.smartrecruiters\.com(\/|$)/, weight: 0.6 },
-  { re: /\.bamboohr\.com(\/|$)/, weight: 0.6 },
-  { re: /\.ashbyhq\.com(\/|$)/, weight: 0.6 },
-  { re: /\.jobvite\.com(\/|$)/, weight: 0.6 },
-  { re: /\.taleo\.net(\/|$)/, weight: 0.6 },
-  { re: /\.successfactors\.(com|eu)(\/|$)/, weight: 0.6 },
-  { re: /\.workable\.com(\/|$)/, weight: 0.6 },
+  { re: /\.greenhouse\.io(\/|$)/, weight: 0.6, name: "Greenhouse" },
+  { re: /boards\.greenhouse\.io(\/|$)/, weight: 0.6, name: "Greenhouse" },
+  { re: /jobs\.lever\.co(\/|$)/, weight: 0.6, name: "Lever" },
+  { re: /\.myworkdayjobs\.com(\/|$)/, weight: 0.6, name: "Workday" },
+  { re: /\.icims\.com(\/|$)/, weight: 0.6, name: "iCIMS" },
+  { re: /\.smartrecruiters\.com(\/|$)/, weight: 0.6, name: "SmartRecruiters" },
+  { re: /\.bamboohr\.com(\/|$)/, weight: 0.6, name: "BambooHR" },
+  { re: /\.ashbyhq\.com(\/|$)/, weight: 0.6, name: "Ashby" },
+  { re: /\.jobvite\.com(\/|$)/, weight: 0.6, name: "Jobvite" },
+  { re: /\.taleo\.net(\/|$)/, weight: 0.6, name: "Taleo" },
+  { re: /\.successfactors\.(com|eu)(\/|$)/, weight: 0.6, name: "SuccessFactors" },
+  { re: /\.workable\.com(\/|$)/, weight: 0.6, name: "Workable" },
   // Job boards — match on path too so we don't flag the homepage
-  { re: /linkedin\.com\/jobs\//, weight: 0.6 },
-  { re: /indeed\.com\/(viewjob|rc\/clk)/, weight: 0.5 },
-  { re: /glassdoor\.com\/(job-listing|Job\/)/, weight: 0.5 },
-  { re: /seek\.com\.au\/job\//, weight: 0.5 },
+  { re: /linkedin\.com\/jobs\//, weight: 0.6, name: "LinkedIn" },
+  { re: /indeed\.com\/(viewjob|rc\/clk)/, weight: 0.5, name: "Indeed" },
+  { re: /glassdoor\.com\/(job-listing|Job\/)/, weight: 0.5, name: "Glassdoor" },
+  { re: /seek\.com\.au\/job\//, weight: 0.5, name: "Seek" },
 ];
 
 // Field names/ids/placeholders that only appear on job application forms.
@@ -77,14 +79,25 @@ const JOB_BODY_THRESHOLD = 2; // need at least this many body keywords
 // Tier implementations
 // ---------------------------------------------------------------------------
 
-/** Tier 1 — URL matches a known ATS or job-board path. */
-function urlScore() {
+/** The first matching ATS_URL_PATTERNS entry, or null. Shared by urlScore()
+ *  and matchedAtsName() so both agree on which pattern matched. */
+function matchedAtsPattern() {
   const href = location.href;
   const host = location.hostname.toLowerCase();
-  for (const { re, weight } of ATS_URL_PATTERNS) {
-    if (re.test(host) || re.test(href)) return weight;
+  for (const pattern of ATS_URL_PATTERNS) {
+    if (pattern.re.test(host) || pattern.re.test(href)) return pattern;
   }
-  return 0;
+  return null;
+}
+
+/** Tier 1 — URL matches a known ATS or job-board path. */
+function urlScore() {
+  return matchedAtsPattern()?.weight ?? 0;
+}
+
+/** Display name of the matched ATS platform, or null (e.g. "Greenhouse"). */
+function matchedAtsName() {
+  return matchedAtsPattern()?.name ?? null;
 }
 
 /** Tier 2a — page embeds a schema.org JobPosting JSON-LD block. */
@@ -162,6 +175,7 @@ function detect() {
   return {
     isJobPage: confidence >= 0.4,
     confidence,
+    atsName: matchedAtsName(),
     signals: {
       urlMatch: tier1 > 0,
       jsonLd,

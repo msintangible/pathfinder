@@ -192,10 +192,13 @@ checkHealthBtn.addEventListener("click", checkHealth);
 backendUrlInput.addEventListener("change", saveBackendUrl);
 copyJsonBtn.addEventListener("click", copyJson);
 
-// Auto-refresh when the user switches tabs or a page finishes loading.
+// Auto-refresh when the user switches tabs, a page finishes loading, or an
+// SPA route change updates the URL without a full navigation (History API
+// pushState — changeInfo.status never re-enters "complete" for that case,
+// only changeInfo.url is set, so both are checked).
 chrome.tabs.onActivated.addListener(refreshForActiveTab);
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.active) {
+  if (tab.active && (changeInfo.status === "complete" || changeInfo.url)) {
     refreshForActiveTab();
   }
 });

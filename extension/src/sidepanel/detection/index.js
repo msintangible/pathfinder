@@ -1,6 +1,10 @@
 /**
- * Detection controller — owns the "Current page" job-detection badge and,
- * in debug builds, the Tier-1/Tier-2 signal breakdown underneath it.
+ * Detection controller — owns the "Current page" job-detection badge (legacy
+ * fallback, debug builds also get the Tier-1/Tier-2 signal breakdown), and
+ * the 3 job-page-ish full-screen states in the redesign: Known ATS, Unknown
+ * ATS, Keywords only. The 4th detection state (true idle, zero confidence)
+ * is idle/index.js's domain — see the note on loadDetection() below for how
+ * the two modules avoid racing each other for the same tab.
  *
  * Detection goes through the service worker (TDD 6.1) via GET_DETECTION,
  * re-run whenever the active tab changes or finishes loading.
@@ -10,6 +14,9 @@
 const DEBUG_MODE = false;
 
 const root = document.getElementById("detection-root");
+const screenRoot = document.getElementById("detection-screen-root");
+const legacyRoot = document.getElementById("legacy-root");
+const idleRoot = document.getElementById("idle-root");
 
 /** Return the active tab (or null). */
 async function getActiveTab() {
@@ -52,11 +59,313 @@ function render(badgeEl, signals) {
   if (DEBUG_MODE && signals) root.appendChild(signalsList(signals));
 }
 
-/** Ask the service worker for the active tab's detection result and render it. */
+// ---------------------------------------------------------------------------
+// Redesign: Known ATS / Unknown ATS / Keywords only full screens
+// ---------------------------------------------------------------------------
+
+const METER = {
+  "known-ats": { label: "Strong match", filled: 3 },
+  "unknown-ats": { label: "Partial match", filled: 2 },
+  "keywords-only": { label: "Low match", filled: 1 },
+};
+
+/** Which of the 3 job-page-ish states applies, or null (idle/index.js's turn). */
+function classify(detection) {
+  if (detection.isJobPage && detection.signals.urlMatch) return "known-ats";
+  if (detection.isJobPage && !detection.signals.urlMatch) return "unknown-ats";
+  if (!detection.isJobPage && detection.confidence > 0) return "keywords-only";
+  return null;
+}
+
+function header() {
+  const el = document.createElement("div");
+  el.className = "pf-header";
+
+  const badgeEl = document.createElement("span");
+  badgeEl.className = "pf-header__badge";
+  badgeEl.textContent = "P";
+
+  const name = document.createElement("span");
+  name.className = "pf-header__name";
+  name.textContent = "Pathfinder";
+
+  el.append(badgeEl, name);
+  return el;
+}
+
+function confidenceMeter(state) {
+  const { label, filled } = METER[state];
+
+  const wrap = document.createElement("div");
+  wrap.className = "det-meter";
+
+  const bars = document.createElement("div");
+  bars.className = "det-meter__bars";
+  for (let i = 0; i < 3; i++) {
+    const bar = document.createElement("span");
+    bar.className = "det-meter__bar" + (i < filled ? ` det-meter__bar--${state}` : "");
+    bars.appendChild(bar);
+  }
+
+  const text = document.createElement("span");
+  text.className = "det-meter__label";
+  text.textContent = label;
+
+  wrap.append(bars, text);
+  return wrap;
+}
+
+const SYSTEM_LABEL = {
+  "known-ats": "Known application system",
+  "unknown-ats": "Unrecognised system",
+  "keywords-only": "Keywords only",
+};
+
+function divider() {
+  const el = document.createElement("div");
+  el.className = "det-divider";
+  return el;
+}
+
+function link(text, onClick) {
+  const el = document.createElement("button");
+  el.className = "det-link";
+  el.textContent = text;
+  el.addEventListener("click", onClick);
+  return el;
+}
+
+/** Join list items into natural-language prose: "a", "a and b", "a, b, and c". */
+function joinWithAnd(items) {
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+}
+
+/** Honest, signal-derived "what's missing" copy for Unknown ATS — built from
+ *  which detect.js signals are actually false, not the specific structured
+ *  fields (location, salary range, ...) the mockup shows, since extracting
+ *  those requires backend analysis this screen doesn't have. */
+const MISSING_SIGNAL_LABELS = {
+  jsonLd: "structured job data",
+  applicationForm: "an application form",
+  jobKeywords: "job description keywords",
+  metaTags: "job metadata",
+};
+
+function missingSignalsCopy(signals) {
+  const missing = Object.entries(MISSING_SIGNAL_LABELS)
+    .filter(([key]) => !signals[key])
+    .map(([, label]) => label);
+
+  if (!missing.length) {
+    return "Pathfinder found this listing, but couldn't confirm it against a known application system. It can still tailor from what's here.";
+  }
+  return `Pathfinder found this listing, but couldn't find: ${joinWithAnd(missing)}. It can still tailor from what's here.`;
+}
+
+/** Job title / company / ATS name / URL block — the middle three states share
+ *  this shape. jobAnalysis is null until the user has run "Analyse this page"
+ *  for this tab; there is no free/local way to get a title or company before
+ *  that, so this falls back to a generic heading rather than fabricating one.
+ *
+ *  jobAnalysis is stored per-tab, not per-URL (see handlePageDetected in
+ *  background/index.js — only cleared on tab close, not navigation), so a
+ *  stale analysis from a previously-visited page on this same tab could
+ *  otherwise show the wrong title/company here. Guarded below by comparing
+ *  its stored url against the current detection.url. */
+function currentPageBlock(state, detection, jobAnalysis) {
+  const analysis = jobAnalysis?.url === detection.url ? jobAnalysis : null;
+
+  const wrap = document.createElement("div");
+  wrap.appendChild(headerLabel());
+  wrap.appendChild(confidenceMeter(state));
+
+  const system = document.createElement("p");
+  system.className = "det-system";
+  system.textContent = SYSTEM_LABEL[state];
+  wrap.appendChild(system);
+
+  const title = document.createElement("p");
+  title.className = "det-title";
+  title.textContent = analysis?.title || (state === "known-ats" ? "Job listing detected" : "Possible job listing");
+  wrap.appendChild(title);
+
+  const companyParts = [analysis?.company, state === "known-ats" ? detection.atsName : null].filter(Boolean);
+  if (companyParts.length) {
+    const company = document.createElement("p");
+    company.className = "det-company";
+    company.textContent = companyParts.join(" · ");
+    wrap.appendChild(company);
+  }
+
+  const url = document.createElement("p");
+  url.className = "det-url";
+  url.textContent = detection.url || "";
+  wrap.appendChild(url);
+
+  return wrap;
+}
+
+function headerLabel() {
+  const el = document.createElement("div");
+  el.className = "det-label";
+  el.textContent = "Current page";
+  return el;
+}
+
+function spacer() {
+  const el = document.createElement("div");
+  el.className = "det-spacer";
+  return el;
+}
+
+/** Disabled — the tailoring pipeline (screens 3-7: loading, diff review,
+ *  decide, confirm, success) doesn't exist yet. TODO(tailoring-flow): wire
+ *  this to trigger ANALYZE_JOB (if not already analysed) then GENERATE_RESUME
+ *  once that flow is built. Genuinely disabled rather than just unwired, so
+ *  it visually reads as "not available yet" instead of silently doing
+ *  nothing on click — same honesty rule as every other screen in this design. */
+function tailorButton(className, text) {
+  const btn = document.createElement("button");
+  btn.className = className;
+  btn.textContent = text;
+  btn.disabled = true;
+  return btn;
+}
+
+function buildKnownAtsScreen(detection, jobAnalysis, onViewProfile) {
+  const screen = document.createElement("div");
+  screen.className = "det-screen";
+  screen.appendChild(header());
+
+  const main = document.createElement("div");
+  main.className = "det-main";
+  main.appendChild(currentPageBlock("known-ats", detection, jobAnalysis));
+  main.appendChild(divider());
+
+  const body = document.createElement("p");
+  body.className = "det-body";
+  body.textContent = "Everything Pathfinder needs to tailor your resume is on this page.";
+  main.appendChild(body);
+
+  main.appendChild(spacer());
+  main.appendChild(tailorButton("det-btn-primary", "Tailor my resume"));
+  main.appendChild(link("View profile", onViewProfile));
+
+  screen.appendChild(main);
+  return screen;
+}
+
+function buildUnknownAtsScreen(detection, jobAnalysis, onViewProfile) {
+  const screen = document.createElement("div");
+  screen.className = "det-screen";
+  screen.appendChild(header());
+
+  const main = document.createElement("div");
+  main.className = "det-main";
+  main.appendChild(currentPageBlock("unknown-ats", detection, jobAnalysis));
+  main.appendChild(divider());
+
+  const notice = document.createElement("div");
+  notice.className = "det-notice";
+  const noticeTitle = document.createElement("p");
+  noticeTitle.className = "det-notice__title";
+  noticeTitle.textContent = "Some details are missing";
+  const noticeBody = document.createElement("p");
+  noticeBody.className = "det-notice__body";
+  noticeBody.textContent = missingSignalsCopy(detection.signals);
+  notice.append(noticeTitle, noticeBody);
+  main.appendChild(notice);
+
+  main.appendChild(spacer());
+  main.appendChild(tailorButton("det-btn-accent-outline", "Tailor with what's here"));
+  main.appendChild(link("View profile", onViewProfile));
+
+  screen.appendChild(main);
+  return screen;
+}
+
+function buildKeywordsOnlyScreen(detection, jobAnalysis, onViewProfile) {
+  const screen = document.createElement("div");
+  screen.className = "det-screen";
+  screen.appendChild(header());
+
+  const main = document.createElement("div");
+  main.className = "det-main";
+  main.appendChild(currentPageBlock("keywords-only", detection, jobAnalysis));
+  main.appendChild(divider());
+
+  const heading = document.createElement("p");
+  heading.className = "det-heading";
+  heading.textContent = "Not enough to tailor from";
+  main.appendChild(heading);
+
+  const body = document.createElement("p");
+  body.className = "det-body";
+  body.textContent =
+    "Pathfinder found scattered keywords here, but not a full job description. Tailoring a resume from this would be guesswork.";
+  main.appendChild(body);
+
+  // No "Keywords found" pills — that needs skill/domain-keyword extraction,
+  // which doesn't exist anywhere in this codebase yet. Known gap, same
+  // reasoning as the title/company fallback above: no fabricated data.
+  main.appendChild(divider());
+
+  main.appendChild(spacer());
+  main.appendChild(tailorButton("det-btn-secondary", "Copy keywords instead"));
+  main.appendChild(link("View profile", onViewProfile));
+
+  screen.appendChild(main);
+  return screen;
+}
+
+/** "View profile" has no dedicated screen in this design pass — reveals the
+ *  legacy stack, same behaviour as idle/index.js's View profile link. */
+function showLegacyScreen() {
+  if (screenRoot) {
+    screenRoot.hidden = true;
+    screenRoot.innerHTML = "";
+  }
+  if (legacyRoot) legacyRoot.hidden = false;
+}
+
+function showDetectionScreen(state, detection, jobAnalysis) {
+  if (!screenRoot || !legacyRoot) return;
+  legacyRoot.hidden = true;
+  // Defensive: the idle screen may still be visible from before the user
+  // switched to this tab — claim the panel outright.
+  if (idleRoot) idleRoot.hidden = true;
+
+  screenRoot.innerHTML = "";
+  const builders = {
+    "known-ats": () => buildKnownAtsScreen(detection, jobAnalysis, showLegacyScreen),
+    "unknown-ats": () => buildUnknownAtsScreen(detection, jobAnalysis, showLegacyScreen),
+    "keywords-only": () => buildKeywordsOnlyScreen(detection, jobAnalysis, showLegacyScreen),
+  };
+  screenRoot.appendChild(builders[state]());
+  screenRoot.hidden = false;
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+/**
+ * Ask the service worker for the active tab's detection result, render the
+ * legacy badge (unchanged), and — for the 3 job-page-ish states — take over
+ * the full panel with the matching redesign screen.
+ *
+ * Zero-confidence pages are idle/index.js's domain: this function no-ops on
+ * the screen-routing decision for that case (still renders the legacy badge)
+ * rather than falling back to legacy itself, so the two modules can't
+ * contradict each other about which root should be visible.
+ */
 async function loadDetection() {
   const tab = await getActiveTab();
   if (!tab) {
     render(badge("No active tab", "neutral"), null);
+    showLegacyScreen();
     return;
   }
 
@@ -68,20 +377,32 @@ async function loadDetection() {
 
   if (!detection) {
     render(badge("Not analysed", "neutral"), null);
+    showLegacyScreen();
     return;
   }
 
   const b = detection.isJobPage
     ? badge(`Job page (${Math.round(detection.confidence * 100)}%)`, "ok")
     : badge("Not a job page", "warn");
-
   render(b, detection.signals);
+
+  const state = classify(detection);
+  if (!state) return; // zero confidence — idle/index.js's turn, don't touch legacy/screen roots
+
+  const jobAnalysisRes = await chrome.runtime.sendMessage({
+    type: "GET_JOB_ANALYSIS",
+    payload: { tabId: tab.id },
+  });
+  showDetectionScreen(state, detection, jobAnalysisRes?.jobAnalysis ?? null);
 }
 
-// Auto-refresh when the user switches tabs or a page finishes loading.
+// Auto-refresh when the user switches tabs, a page finishes loading, or an
+// SPA route change updates the URL without a full navigation (History API
+// pushState — changeInfo.status never re-enters "complete" for that case,
+// only changeInfo.url is set, so both are checked).
 chrome.tabs.onActivated.addListener(loadDetection);
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.active) {
+  if (tab.active && (changeInfo.status === "complete" || changeInfo.url)) {
     loadDetection();
   }
 });

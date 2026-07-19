@@ -7,63 +7,74 @@
     <link rel="stylesheet" href="sidepanel.css" />
     <link rel="stylesheet" href="profile/profile.css" />
     <link rel="stylesheet" href="optimize/optimize.css" />
+    <link rel="stylesheet" href="idle/idle.css" />
+    <link rel="stylesheet" href="detection/detection.css" />
   </head>
   <body>
-    <header class="header">
-      <h1 class="title">Pathfinder</h1>
-      <span class="version">v0.1.0</span>
-    </header>
+    <!-- Redesign screens (one visible at a time). Each hides #legacy-root
+         when its own state applies, and un-hides it for "View profile" and
+         for any state that doesn't have a redesigned screen yet. -->
+    <div id="idle-root" hidden></div>
+    <div id="detection-screen-root" hidden></div>
 
-    <section class="card">
-      <h2 class="card__title">Current page</h2>
-      <div id="detection-root"></div>
-      <a id="page-url" class="page-url" href="#" target="_blank" rel="noopener"></a>
-    </section>
+    <div id="legacy-root">
+      <header class="header">
+        <h1 class="title">Pathfinder</h1>
+        <span class="version">v0.1.0</span>
+      </header>
 
-    <section class="card">
-      <div class="card__head">
-        <h2 class="card__title">Scraped text (JSON)</h2>
-        <button id="copy-json" class="btn-link" hidden>Copy</button>
-      </div>
-      <p id="scrape-status" class="status" hidden></p>
-      <pre id="scrape-json" class="json" hidden></pre>
-    </section>
+      <section class="card">
+        <h2 class="card__title">Current page</h2>
+        <div id="detection-root"></div>
+        <a id="page-url" class="page-url" href="#" target="_blank" rel="noopener"></a>
+      </section>
 
-    <section class="card">
-      <h2 class="card__title">Your Profile</h2>
-      <div id="profile-root"></div>
-    </section>
+      <section class="card">
+        <div class="card__head">
+          <h2 class="card__title">Scraped text (JSON)</h2>
+          <button id="copy-json" class="btn-link" hidden>Copy</button>
+        </div>
+        <p id="scrape-status" class="status" hidden></p>
+        <pre id="scrape-json" class="json" hidden></pre>
+      </section>
 
-    <section class="card">
-      <h2 class="card__title">Backend</h2>
-      <div id="health" class="health">
-        <span class="badge badge--neutral">Unknown</span>
-      </div>
-      <label class="field">
-        <span class="field__label">Backend URL</span>
-        <input id="backend-url" class="input" type="text" placeholder="http://localhost:8003" />
-      </label>
-      <button id="check-health" class="btn btn--secondary">Check connection</button>
-    </section>
+      <section class="card">
+        <h2 class="card__title">Your Profile</h2>
+        <div id="profile-root"></div>
+      </section>
 
-    <section class="card">
-      <h2 class="card__title">Job Analysis</h2>
-      <div id="job-analysis-root"></div>
-    </section>
+      <section class="card">
+        <h2 class="card__title">Backend</h2>
+        <div id="health" class="health">
+          <span class="badge badge--neutral">Unknown</span>
+        </div>
+        <label class="field">
+          <span class="field__label">Backend URL</span>
+          <input id="backend-url" class="input" type="text" placeholder="http://localhost:8003" />
+        </label>
+        <button id="check-health" class="btn btn--secondary">Check connection</button>
+      </section>
 
-    <section class="card">
-      <h2 class="card__title">Optimize CV</h2>
-      <div id="optimize-root"></div>
-    </section>
+      <section class="card">
+        <h2 class="card__title">Job Analysis</h2>
+        <div id="job-analysis-root"></div>
+      </section>
 
-    <footer class="footer">
-      Phase 2 — auto-scrape page text.
-    </footer>
+      <section class="card">
+        <h2 class="card__title">Optimize CV</h2>
+        <div id="optimize-root"></div>
+      </section>
+
+      <footer class="footer">
+        Phase 2 — auto-scrape page text.
+      </footer>
+    </div>
 
     <script src="sidepanel.js"></script>
     <script type="module" src="detection/index.js"></script>
     <script type="module" src="job-analysis/index.js"></script>
     <script type="module" src="profile/index.js"></script>
     <script type="module" src="optimize/index.js"></script>
+    <script type="module" src="idle/index.js"></script>
   </body>
 </html>
