@@ -1,0 +1,135 @@
+/* Idle screen (Screen 1) — "no job page, returning user" state.
+ * Reuses the :root design tokens from sidepanel.css. */
+
+#idle-root {
+  margin: -12px; /* cancel body's global 12px padding for a full-bleed screen */
+}
+
+.idle-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.idle-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-8);
+}
+
+.idle-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 40px 4px 44px;
+}
+
+.idle-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-9);
+}
+
+.idle-dot__center {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.idle-heading {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.4px;
+  line-height: 1.25;
+  margin: 0 0 var(--space-4);
+}
+
+.idle-body {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 300px;
+  margin: 0;
+}
+
+.idle-divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.idle-section {
+  padding: var(--space-9) 4px;
+}
+
+.idle-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--label);
+  margin: 0 0 var(--space-4);
+}
+
+.idle-activity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.idle-activity__count {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.idle-activity__text {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.idle-profile {
+  padding: var(--space-9) 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+/* The profile row's label sits closer to its status line than the
+ * Recent Activity label sits to its count (6px vs 10px in the export). */
+.idle-profile .idle-label {
+  margin-bottom: var(--space-2);
+}
+
+.idle-profile__status {
+  font-size: 14px;
+  color: var(--text);
+  margin: 0;
+}
+
+.idle-btn-secondary {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.idle-btn-secondary:hover {
+  background: var(--hover);
+  border-color: var(--muted);
+}

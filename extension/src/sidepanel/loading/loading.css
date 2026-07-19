@@ -1,0 +1,125 @@
+/* Loading screen (Screen 3) — reuses the :root design tokens from
+ * sidepanel.css. Same full-bleed treatment as detection.css/idle.css. */
+
+#loading-screen-root {
+  margin: -12px; /* cancel body's global 12px padding for a full-bleed screen */
+}
+
+.load-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.load-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-8);
+}
+
+.load-heading {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  margin: 0 0 var(--space-2);
+}
+
+/* Red is reserved for genuine failure only (backend down, parse failure) —
+ * see docs/pathfinder-uiux-requirements.md's color-meaning table. */
+.load-heading--error {
+  color: var(--red);
+}
+
+.load-caption {
+  font-size: 12px;
+  color: var(--label);
+  margin: 0 0 var(--space-8);
+}
+
+.load-error-body {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0 0 var(--space-8);
+}
+
+/* Matches .det-btn-secondary's shape/tone (detection.css) — same secondary
+ * action treatment used elsewhere in the redesign. */
+.load-retry-btn {
+  width: 100%;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+}
+
+.load-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.load-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.load-step__label {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.load-step--active .load-step__label,
+.load-step--done .load-step__label {
+  color: var(--text);
+}
+
+.load-step__icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.load-step__icon--pending {
+  border: 1.5px solid var(--border);
+}
+
+/* The one reserved accent — "AI acting now" (see sidepanel.css's --accent
+ * comment). This is the only step state that's genuinely in flight. */
+.load-step__icon--active {
+  border: 1.5px solid var(--accent);
+}
+
+.load-step__icon--done {
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.load-spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+  border-top-color: transparent;
+  animation: load-spin 0.8s linear infinite;
+}
+
+@keyframes load-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

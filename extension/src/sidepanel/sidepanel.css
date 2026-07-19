@@ -1,13 +1,87 @@
 :root {
-  --bg: #0f172a;
-  --card: #1e293b;
-  --text: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #2563eb;
+  /* Neutral scale — panel surface, text, structure */
+  --bg: #fcfcfc;
+  --card: #fcfcfc;
+  --border: #e4e4e2;
+  --border-subtle: #ececea;
+  --text: #1a1a1a;
+  --muted: #6b6b69;
+  --label: #8a8a88;
+  --hover: #f2f2f0;
+
+  /* Neutral filled button (default action — not "AI acting now") */
+  --fill: #1f1f1f;
+  --fill-on: #ffffff;
+
+  /* Terracotta accent — reserved for "AI acting now" only:
+     tailor button, active tailoring step, diff highlight. */
+  --accent: #b84a33;
+  --accent-on: #ffffff;
+
+  /* Amber — informational catch (unknown ATS, duplicate listing). Not an error. */
+  --amber-bg: #faf3e6;
+  --amber-text: #7a5a2a;
+
+  /* Red — genuine failure only (backend down, parse failure). */
+  --red: #cf3a3a;
+
+  /* Confidence-meter bar fill — one tone per match strength (not a single
+     filled/unfilled binary), plus a shared empty-bar tone. Neutral, not
+     terracotta: this is informational, not "AI acting now". */
+  --meter-strong: #2a2a2a;
+  --meter-partial: #6a6a68;
+  --meter-low: #b0b0ae;
+  --meter-empty: #e2e2e0;
+
+  /* Legacy badge-fill tokens: still used by .badge--ok/--warn/--err below.
+     Left untouched — the new amber/red are pale-tint-plus-text pairs, not
+     solid fills, so they don't map onto this role. Revisit when the badge
+     component itself is redesigned. */
   --ok: #16a34a;
   --warn: #d97706;
   --err: #dc2626;
-  --radius: 8px;
+
+  --radius: 10px;
+
+  /* Spacing scale, taken from the export's own repeated increments. */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 14px;
+  --space-7: 16px;
+  --space-8: 20px;
+  --space-9: 22px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191d;
+    --card: #17191d;
+    --border: #282a30;
+    --border-subtle: #26282e;
+    --text: #ededeb;
+    --muted: #a2a2a0;
+    --label: #8a8a88;
+    --hover: #282a30;
+
+    --fill: #ededeb;
+    --fill-on: #1a1a1a;
+
+    --accent: #e0715a;
+    --accent-on: #ffffff;
+
+    --amber-bg: #2a2312;
+    --amber-text: #c9a969;
+
+    --red: #ec6a63;
+
+    --meter-strong: #e2e2e0;
+    --meter-partial: #8c8e92;
+    --meter-low: #55585e;
+    --meter-empty: #2e3137;
+  }
 }
 
 * {
@@ -210,4 +284,37 @@ body {
 
 .upload--selected .upload__label {
   color: var(--text);
+}
+
+/* ---------------------------------------------------------------------------
+ * Shared screen header (P-badge + wordmark) — identical across every screen
+ * in the redesign, so it lives here rather than duplicated per screen.
+ * ------------------------------------------------------------------------ */
+.pf-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--space-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pf-header__badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--fill);
+  color: var(--fill-on);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.5px;
+}
+
+.pf-header__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.2px;
 }

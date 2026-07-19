@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     postgres_user: str = "postgres"
     postgres_password: str = "postgres"
     postgres_db: str = "pathfinder"
+    postgres_port: int = 5432
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 

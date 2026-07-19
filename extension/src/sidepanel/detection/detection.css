@@ -1,0 +1,192 @@
+/* Detection screens — Known ATS, Unknown ATS, Keywords only.
+ * Reuses the :root design tokens from sidepanel.css. */
+
+#detection-screen-root {
+  margin: -12px; /* cancel body's global 12px padding for a full-bleed screen */
+}
+
+.det-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.det-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-8);
+}
+
+.det-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--label);
+  margin: 0 0 var(--space-5);
+}
+
+.det-meter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.det-meter__bars {
+  display: flex;
+  gap: 3px;
+}
+
+.det-meter__bar {
+  width: 16px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--meter-empty);
+}
+
+.det-meter__bar--known-ats { background: var(--meter-strong); }
+.det-meter__bar--unknown-ats { background: var(--meter-partial); }
+.det-meter__bar--keywords-only { background: var(--meter-low); }
+
+.det-meter__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.det-system {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 var(--space-5);
+}
+
+.det-title {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  margin: 0 0 5px;
+}
+
+.det-company {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 var(--space-5);
+}
+
+.det-url {
+  font-size: 12px;
+  color: var(--label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.det-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: var(--space-8) 0;
+}
+
+.det-heading {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  margin: 0 0 var(--space-4);
+}
+
+.det-body {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Amber "helpful catch" box — Unknown ATS's missing-fields notice. */
+.det-notice {
+  background: var(--amber-bg);
+  border-radius: var(--radius);
+  padding: var(--space-6) var(--space-7);
+}
+
+.det-notice__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amber-text);
+  margin: 0 0 var(--space-2);
+}
+
+.det-notice__body {
+  font-size: 13px;
+  color: var(--amber-text);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.det-spacer {
+  flex: 1;
+}
+
+/* --- Buttons --- */
+
+.det-btn-primary,
+.det-btn-accent-outline,
+.det-btn-secondary {
+  width: 100%;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.det-btn-primary {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-on);
+  background: var(--accent);
+  border: none;
+  padding: 15px;
+}
+
+.det-btn-accent-outline,
+.det-btn-secondary {
+  font-size: 15px;
+  font-weight: 600;
+  background: transparent;
+  padding: 14px;
+  border: 1.5px solid;
+}
+
+.det-btn-accent-outline {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.det-btn-secondary {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Same reduced-opacity treatment as .btn:disabled in sidepanel.css — a
+ * disabled action must look disabled, never silently inert. */
+.det-btn-primary:disabled,
+.det-btn-accent-outline:disabled,
+.det-btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.det-link {
+  display: block;
+  text-align: center;
+  margin-top: var(--space-6);
+  font-size: 13px;
+  color: var(--label);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
