@@ -82,11 +82,15 @@ export async function importProfile(opts) {
   const { file, linkedin, linkedinText, github, portfolio, onProgress } = opts;
   const base = await getBaseUrl();
 
+  // Same treatment as errorFromXhr above: getAuthToken() throws a technical
+  // "Could not authenticate: HTTP {status}" string (auth.js) on a failed
+  // token mint — logged for debugging, never shown to the user as-is.
   let token;
   try {
     token = await getAuthToken(base);
   } catch (err) {
-    return { ok: false, error: err?.message ?? "Could not authenticate — is the backend running?" };
+    console.error("profile import failed (auth):", err?.message ?? err);
+    return { ok: false, error: "Try again." };
   }
 
   const form = new FormData();

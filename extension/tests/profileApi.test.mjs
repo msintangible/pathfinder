@@ -26,11 +26,13 @@ global.chrome = {
   },
 };
 
-// --- Mock fetch: only used by getAuthToken() to mint an anonymous token ---
-global.fetch = async () => ({
-  ok: true,
-  json: async () => ({ access_token: "test-token" }),
-});
+// --- Mock fetch: only used by getAuthToken() to mint an anonymous token.
+// `authMintOk` (default true) lets a test simulate the mint itself failing. ---
+let authMintOk = true;
+global.fetch = async () => {
+  if (!authMintOk) return { ok: false, status: 500 };
+  return { ok: true, json: async () => ({ access_token: "test-token" }) };
+};
 
 // --- Mock XMLHttpRequest: captures the sent FormData/headers, resolves with a canned response ---
 let nextResponse = { status: 200, body: {} };
@@ -189,6 +191,27 @@ await test("a response with no usable body falls back to plain copy, not a bare 
 
   assert(result.ok === false, "not ok");
   assert(result.error === "Try again.", `error: ${result.error}`);
+});
+
+// Regression: getAuthToken() (auth.js) throws "Could not authenticate:
+// HTTP {status}" when the anonymous-token mint itself fails — that
+// technical string used to flow straight through this catch block's
+// err?.message fallback, never sanitized. No test previously covered it.
+await test("an auth-mint failure never leaks the technical message, and is logged", async () => {
+  storedLocal = {}; // no cached token — forces a real mint attempt
+  authMintOk = false;
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  const result = await importProfile({ linkedin: "https://linkedin.com/in/jane" });
+  console.error = originalConsoleError;
+  authMintOk = true;
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Try again.", `error: ${result.error}`);
+  assert(!result.error.includes("HTTP"), "never the raw 'Could not authenticate: HTTP {status}' message");
+  assert(logged.some((l) => l.includes("Could not authenticate")), "real detail still logged for debugging");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

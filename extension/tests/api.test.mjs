@@ -29,13 +29,18 @@ global.chrome = {
 
 // --- Mock fetch: routes to either the auth-token mint or a canned response.
 // `queue` lets a test script a specific sequence of responses (e.g. 404 then
-// restore then retry); when empty, every call falls back to `nextResponse`. ---
+// restore then retry); when empty, every call falls back to `nextResponse`.
+// `authMintOk` (default true) lets a test simulate the auth-mint call itself
+// failing — a different failure surface than a canned 401 on the real
+// endpoint, since it happens before any Authorization header exists. ---
 let nextResponse = { status: 200, body: {} };
 let queue = [];
+let authMintOk = true;
 const requests = [];
 global.fetch = async (url, init) => {
   requests.push({ url, init });
   if (url.endsWith("/v1/auth/anonymous")) {
+    if (!authMintOk) return { ok: false, status: 500, json: async () => ({}) };
     return { ok: true, json: async () => ({ access_token: "test-token" }) };
   }
   const canned = queue.length ? queue.shift() : nextResponse;
@@ -47,7 +52,7 @@ global.fetch = async (url, init) => {
   };
 };
 
-const { analyzeJob, generateResume } = await import("../src/background/api.js");
+const { analyzeJob, generateResume, checkHealth } = await import("../src/background/api.js");
 
 await test("analyzeJob attaches the cached auth token as a Bearer header", async () => {
   nextResponse = { status: 200, body: { id: "job-1" } };
@@ -171,6 +176,53 @@ await test("generateResume: a real raw 500 never reaches the caller, and is logg
   assert(!result.error.includes("HTTP"), "never the raw HTTP status");
   assert(!result.error.includes("{"), "never the raw JSON body");
   assert(logged.some((l) => l.includes("INTERNAL_SERVER_ERROR")), "real detail still logged for debugging");
+});
+
+// Regression: a narrower but real leak found during a self-audit —
+// getAuthToken() (auth.js) throws "Could not authenticate: HTTP {status}"
+// when the anonymous-token mint itself fails, and that string used to flow
+// straight through networkError()'s `err?.message` fallback, bypassing
+// sanitizedFailure() entirely since it's a caught exception, not an
+// !res.ok HTTP response. No test previously covered this path.
+await test("analyzeJob: an auth-mint failure never leaks the technical message, and is logged", async () => {
+  delete storedLocal.authToken; // force a real mint attempt, not a cache hit
+  authMintOk = false;
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  const result = await analyzeJob({ raw_text: "We are hiring." });
+  console.error = originalConsoleError;
+  authMintOk = true;
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Couldn't read this job posting. Try again.", `error: ${result.error}`);
+  assert(!result.error.includes("HTTP"), "never the raw 'Could not authenticate: HTTP {status}' message");
+  assert(logged.some((l) => l.includes("Could not authenticate")), "real detail still logged for debugging");
+});
+
+await test("generateResume: an auth-mint failure never leaks the technical message, and is logged", async () => {
+  delete storedLocal.authToken;
+  authMintOk = false;
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  const result = await generateResume({ user_profile_id: "p-1", job_id: "j-1" });
+  console.error = originalConsoleError;
+  authMintOk = true;
+
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Couldn't generate your resume. Try again.", `error: ${result.error}`);
+  assert(!result.error.includes("HTTP"), "never the raw 'Could not authenticate: HTTP {status}' message");
+  assert(logged.some((l) => l.includes("Could not authenticate")), "real detail still logged for debugging");
+});
+
+await test("checkHealth: a real HTTP failure and an auth-independent network failure both return plain copy", async () => {
+  nextResponse = { status: 503, body: {} };
+  const result = await checkHealth();
+  assert(result.ok === false, "not ok");
+  assert(result.error === "Backend unreachable.", `error: ${result.error}`);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

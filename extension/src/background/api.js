@@ -35,14 +35,6 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
-/** Normalise a failed fetch into the { ok: false, error } shape used everywhere. */
-function networkError(err) {
-  if (err?.name === "AbortError") {
-    return { ok: false, error: `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s` };
-  }
-  return { ok: false, error: err?.message ?? "Network error" };
-}
-
 /**
  * Every consumer of analyzeJob()/generateResume() (detection/index.js,
  * optimize/index.js, job-analysis/index.js) used to unpack a failed
@@ -61,6 +53,24 @@ function sanitizedFailure(context, rawDetail, plainMessage) {
   return { ok: false, error: plainMessage };
 }
 
+/**
+ * Normalise a failed fetch/throw into the { ok: false, error } shape used
+ * everywhere. Routes through sanitizedFailure() the same as every !res.ok
+ * branch — this used to just return err?.message directly, which leaked a
+ * narrower but real variant of the same raw-error problem: getAuthToken()
+ * throws "Could not authenticate: HTTP {status}" (auth.js) on a failed
+ * token mint, and that technical string flowed straight through to the UI,
+ * bypassing sanitizedFailure() entirely since it's a caught exception, not
+ * an !res.ok response. Timeouts are already calm, specific copy on their
+ * own ("Request timed out after Ns") and are shown as-is.
+ */
+function networkError(err, context, plainMessage) {
+  if (err?.name === "AbortError") {
+    return { ok: false, error: `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s` };
+  }
+  return sanitizedFailure(context, err?.message ?? "Network error", plainMessage);
+}
+
 export async function checkHealth() {
   try {
     const base = await getBaseUrl();
@@ -68,10 +78,10 @@ export async function checkHealth() {
       method: "GET",
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    if (!res.ok) return sanitizedFailure("HEALTH_CHECK", `HTTP ${res.status}`, "Backend unreachable.");
     return { ok: true, data: await res.json() };
   } catch (err) {
-    return networkError(err);
+    return networkError(err, "HEALTH_CHECK", "Backend unreachable.");
   }
 }
 
@@ -99,7 +109,7 @@ export async function analyzeJob({ raw_text, url } = {}) {
     }
     return { ok: true, data: await res.json() };
   } catch (err) {
-    return networkError(err);
+    return networkError(err, "ANALYZE_JOB", "Couldn't read this job posting. Try again.");
   }
 }
 
@@ -182,6 +192,6 @@ export async function generateResume({ user_profile_id, job_id } = {}) {
     }
     return { ok: true, data: await res.json() };
   } catch (err) {
-    return networkError(err);
+    return networkError(err, "GENERATE_RESUME", "Couldn't generate your resume. Try again.");
   }
 }
