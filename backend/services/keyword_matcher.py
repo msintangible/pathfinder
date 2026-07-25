@@ -100,3 +100,66 @@ def _flatten_optimized_resume(optimized_resume: dict) -> str:
         parts.append(project.get("description") or "")
         parts.extend(project.get("technologies") or [])
     return " ".join(parts)
+
+
+def filter_backed_keywords(candidate_profile: dict, keywords: list[str]) -> list[str]:
+    """
+    Of `keywords` (already confirmed to appear in the optimized resume's
+    wording — see find_added_keywords), keep only the ones with a real
+    textual basis somewhere in the candidate's own profile data: a project,
+    a job bullet, a GitHub repo, a skill list entry — anything the candidate
+    actually said about themselves.
+
+    This is a code-level safety net, not a replacement for
+    ResumeGenerationAgent's "never invent" prompt rule — a keyword with zero
+    textual basis anywhere in the full profile is a clear-cut fabrication
+    signal; a keyword this substring check misses (a genuine but very
+    differently-worded rephrase) is not something either this or the prompt
+    can fully guarantee, but that's a smaller, harder-to-avoid gap than
+    trusting the LLM's compliance with no check at all.
+    """
+    profile_text = _flatten_candidate_profile_text(candidate_profile).lower()
+    return [keyword for keyword in keywords if keyword.strip().lower() in profile_text]
+
+
+def _flatten_candidate_profile_text(profile: dict) -> str:
+    parts: list[str] = [profile.get("headline") or "", profile.get("summary") or ""]
+
+    for field in _PROFILE_SKILL_FIELDS:
+        parts.extend(profile.get(field) or [])
+    parts.extend(profile.get("soft_skills") or [])
+
+    for entry in profile.get("work_experience") or []:
+        parts.extend(entry.get("bullets") or [])
+        parts.extend(entry.get("technologies") or [])
+        parts.extend(entry.get("skills_demonstrated") or [])
+
+    for project in profile.get("projects") or []:
+        parts.append(project.get("description") or "")
+        parts.extend(project.get("technologies") or [])
+        parts.extend(project.get("skills_demonstrated") or [])
+        parts.extend(project.get("notable_achievements") or [])
+
+    for repo in profile.get("github_repositories") or []:
+        parts.append(repo.get("description") or "")
+        parts.append(repo.get("purpose") or "")
+        parts.extend(repo.get("languages") or [])
+        parts.extend(repo.get("frameworks") or [])
+        parts.extend(repo.get("technologies") or [])
+        parts.extend(repo.get("skills_demonstrated") or [])
+
+    for education in profile.get("education") or []:
+        parts.extend(education.get("achievements") or [])
+
+    for cert in profile.get("certifications") or []:
+        parts.append(cert.get("name") or "")
+
+    parts.extend(profile.get("open_source_contributions") or [])
+    parts.extend(profile.get("awards") or [])
+    parts.extend(profile.get("achievements") or [])
+    parts.extend(profile.get("leadership_experience") or [])
+    parts.extend(profile.get("volunteer_work") or [])
+    parts.extend(profile.get("publications") or [])
+    parts.extend(profile.get("interests") or [])
+
+    return " ".join(parts)

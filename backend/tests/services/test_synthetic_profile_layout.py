@@ -67,6 +67,19 @@ def test_build_creates_project_description_and_joined_technologies_blocks():
     assert _block_by_id(layout, "projects[0].technologies").text == "Python, React"
 
 
+def test_build_creates_one_block_per_project_achievement():
+    profile = {
+        "projects": [
+            {"name": "pathfinder", "description": "Job assistant", "notable_achievements": ["500 stars", "Featured on HN"]},
+        ],
+    }
+
+    layout = build_synthetic_layout(profile)
+
+    assert _block_by_id(layout, "projects[0].achievements[0]").text == "500 stars"
+    assert _block_by_id(layout, "projects[0].achievements[1]").text == "Featured on HN"
+
+
 def test_build_creates_no_blocks_for_empty_experience_and_projects():
     layout = build_synthetic_layout({"headline": None, "summary": None})
     block_ids = {block.block_id for section in layout.sections for block in section.blocks}
@@ -129,6 +142,20 @@ def test_flatten_preserves_entry_count_and_order_unconditionally():
 
     assert len(resume["experience"]) == 2
     assert [e["company"] for e in resume["experience"]] == ["Acme Corp", "Startup Inc"]
+
+
+def test_flatten_reflects_patched_project_achievement_text():
+    profile = {
+        "projects": [
+            {"name": "pathfinder", "description": "Job assistant", "notable_achievements": ["500 stars"]},
+        ],
+    }
+    layout = build_synthetic_layout(profile)
+    _block_by_id(layout, "projects[0].achievements[0]").text = "500 GitHub stars and 50 forks"
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["projects"][0]["bullets"] == ["Job assistant", "500 GitHub stars and 50 forks"]
 
 
 def test_flatten_handles_profiles_with_no_experience_or_projects():

@@ -132,11 +132,11 @@
             {% if skill_groups %}
                 {% for group in skill_groups %}
                     {% if group["items"] %}
-                    <p class="skill-row"><span class="skill-label">{{ group.label }}</span><br>{{ group["items"] | join(" &bull; ") }}</p>
+                    <p class="skill-row"><span class="skill-label">{{ group.label }}</span><br>{{ group["items"] | join(" • ") }}</p>
                     {% endif %}
                 {% endfor %}
             {% else %}
-            <p class="skill-row">{{ skills | join(" &bull; ") }}</p>
+            <p class="skill-row">{{ skills | join(" • ") }}</p>
             {% endif %}
         </div>
 
@@ -172,7 +172,7 @@
             <div class="entry">
                 <div class="entry-title">{{ project.name or "" }}</div>
                 {% if project.technologies %}
-                <p class="tech-stack"><span class="tech-label">Tech Stack:</span> {{ project.technologies | join(" &bull; ") }}</p>
+                <p class="tech-stack"><span class="tech-label">Tech Stack:</span> {{ project.technologies | join(" • ") }}</p>
                 {% endif %}
                 {% if project.bullets %}
                 <ul>
@@ -248,7 +248,7 @@
         {% elif section == "interests" and interests %}
         <div class="section">
             <h2 class="section-title">Interests</h2>
-            <p class="skill-row">{{ interests | join(" &bull; ") }}</p>
+            <p class="skill-row">{{ interests | join(" • ") }}</p>
         </div>
 
         {% elif section == "references" and references %}

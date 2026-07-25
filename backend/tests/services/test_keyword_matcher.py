@@ -1,4 +1,4 @@
-from services.keyword_matcher import find_added_keywords, match_keywords
+from services.keyword_matcher import filter_backed_keywords, find_added_keywords, match_keywords
 
 
 def test_matches_case_insensitively():
@@ -143,3 +143,62 @@ def test_keyword_not_present_anywhere_is_not_added():
 
 def test_empty_optimized_resume_adds_nothing():
     assert find_added_keywords(["Terraform"], {}) == []
+
+
+# ---------------------------------------------------------------------------
+# filter_backed_keywords
+# ---------------------------------------------------------------------------
+
+def test_keeps_a_keyword_backed_by_a_work_experience_bullet():
+    profile = {"work_experience": [{"bullets": ["Researched AWS Lambda for scalability decisions."]}]}
+
+    backed = filter_backed_keywords(profile, ["Lambda"])
+
+    assert backed == ["Lambda"]
+
+
+def test_keeps_a_keyword_backed_by_a_project_technology():
+    profile = {"projects": [{"technologies": ["Terraform"]}]}
+
+    backed = filter_backed_keywords(profile, ["Terraform"])
+
+    assert backed == ["Terraform"]
+
+
+def test_keeps_a_keyword_backed_by_a_github_repo():
+    profile = {"github_repositories": [{"description": "A tool built with Kubernetes."}]}
+
+    backed = filter_backed_keywords(profile, ["Kubernetes"])
+
+    assert backed == ["Kubernetes"]
+
+
+def test_drops_a_keyword_with_no_basis_anywhere_in_the_profile():
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [{"bullets": ["Built REST APIs."]}],
+    }
+
+    backed = filter_backed_keywords(profile, ["Rust"])
+
+    assert backed == []
+
+
+def test_mixed_backed_and_unbacked_keywords():
+    profile = {"technical_skills": ["Python"], "projects": [{"description": "Used Docker for deployment."}]}
+
+    backed = filter_backed_keywords(profile, ["Python", "Docker", "Rust"])
+
+    assert set(backed) == {"Python", "Docker"}
+
+
+def test_matching_is_case_insensitive_for_backing():
+    profile = {"technical_skills": ["python"]}
+
+    backed = filter_backed_keywords(profile, ["PYTHON"])
+
+    assert backed == ["PYTHON"]
+
+
+def test_empty_profile_backs_nothing():
+    assert filter_backed_keywords({}, ["Python"]) == []

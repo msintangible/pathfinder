@@ -382,6 +382,27 @@ async def test_uses_zero_temperature_for_determinism(mock_genai):
 
 
 # ---------------------------------------------------------------------------
+# Deduplication (see profile_deduplicator.py)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_analyze_dedupes_duplicate_work_experience_from_the_llm(mock_genai):
+    duplicated = {
+        **_SPARSE_PROFILE,
+        "work_experience": [
+            {"title": "Intern", "company": "Acme", "bullets": ["Did X"]},
+            {"title": "Intern", "company": "Acme", "bullets": ["Did Y"]},
+        ],
+    }
+    mock_genai.aio.models.generate_content.return_value = _make_response(duplicated)
+
+    result = await CandidateProfileAgent().analyze(CandidateProfileInput(resume_text="..."))
+
+    assert len(result["work_experience"]) == 1
+    assert set(result["work_experience"][0]["bullets"]) == {"Did X", "Did Y"}
+
+
+# ---------------------------------------------------------------------------
 # Invalid LLM output
 # ---------------------------------------------------------------------------
 

@@ -7,6 +7,7 @@ from google.genai import types
 
 from schemas.profile import CandidateProfile, CandidateProfileInput
 from services.llm_output import parse_llm_json
+from services.profile_deduplicator import dedupe_profile
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -118,7 +119,8 @@ class CandidateProfileAgent:
                 temperature=0,
             ),
         )
-        return parse_llm_json(response.text, CandidateProfile)
+        profile = parse_llm_json(response.text, CandidateProfile)
+        return dedupe_profile(profile)
 
     def _build_content(self, input: CandidateProfileInput) -> str:
         """

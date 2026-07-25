@@ -10,7 +10,7 @@ from google.genai import types
 from schemas.resume import OptimizationPatchResponse
 from schemas.resume_layout import ContentPatch, ResumeLayoutDocument
 from services.ats_scorer import compute_ats
-from services.keyword_matcher import KeywordReport, find_added_keywords, match_keywords
+from services.keyword_matcher import KeywordReport, filter_backed_keywords, find_added_keywords, match_keywords
 from services.llm_output import parse_llm_json
 from services.patch_engine import apply_patches
 from services.profile_layout_correlator import correlate_profile_to_layout
@@ -67,6 +67,11 @@ ones that obviously need it — summary and skills included. Only when the
 honest answer is "there's truly nothing more to add without stretching the
 truth" should a block come back unchanged.
 
+When a bullet or project description honestly supports more than one angle,
+lead with whichever angle this specific job cares about most — don't default
+to the candidate's own original emphasis or chronological framing if a
+different genuine detail in the same block is more relevant to this posting.
+
 candidate_profile.github_repositories is real, verifiable experience —
 treat it the same as work_experience or projects for sourcing truthful
 detail, not just as background reading. If a repo's languages/technologies/
@@ -101,23 +106,27 @@ never fabricate the experience to claim it.
 
 Section rules:
 - summary: rewrite freely to target the role, but keep it roughly the same
-  length as its current text — this block renders into a fixed-size area in
-  the original document, and growing it substantially risks visible
-  truncation.
+  length as its current text (about 4 lines) — this is the candidate's
+  first impression, not a place to introduce a wall of text.
 - skills: write a single comma-separated list compiled from
   candidate_profile's technical_skills, programming_languages, frameworks,
   libraries, databases, cloud_platforms, devops_tools, ai_ml_tools,
   development_tools, and the languages/technologies used across
   github_repositories — reordered to prioritize whatever's relevant to this
   job. Every item must already exist in one of those sources; never add or
-  drop a genuine skill. This also renders into a fixed-size area, so write it
-  compactly: a flat comma-separated list, with no per-category label
-  prefixes ("Languages:", "Tools:", ...) eating into that space.
+  drop a genuine skill. Write it compactly: a flat comma-separated list, with
+  no per-category label prefixes ("Languages:", "Tools:", ...).
 - experience bullets: wording only. Keep each bullet within about 15% of its
   original length — expand only as far as a genuinely supported keyword
-  requires, and never enough to noticeably lengthen the overall document.
-- projects: description and technologies may be reworded/surfaced the same
-  way as experience bullets; entry order is decided upstream, not by you.
+  requires. A resume that runs long loses an entire project or experience
+  entry to fit the 2-page budget (see resume_page_fitter.py), not just this
+  one bullet, so don't treat a single bullet's length as free to grow.
+- projects: description, technologies, and each notable_achievements bullet
+  may all be reworded/surfaced the same way as experience bullets — every
+  project bullet is a real block_id you were given, not just the
+  description. Lead with the outcome/impact of the project (what it did,
+  what changed as a result), not just what it's built with; entry order is
+  decided upstream, not by you.
 - changes_summary: write one line per block you actually changed — never a
   line for a block you left alone, and never fewer lines than the number of
   blocks you changed. Do not artificially limit yourself: if this job has
@@ -178,7 +187,17 @@ class ResumeGenerationAgent:
 
         optimized_resume = flatten_layout_to_resume(ranked.profile, patch_result.document)
         ats_score = compute_ats(keyword_report)
-        added_keywords = find_added_keywords(keyword_report.missing, optimized_resume)
+
+        added_keyword_candidates = find_added_keywords(keyword_report.missing, optimized_resume)
+        added_keywords = filter_backed_keywords(profile, added_keyword_candidates)
+        unbacked_keywords = [kw for kw in added_keyword_candidates if kw not in added_keywords]
+        if unbacked_keywords:
+            logger.warning(
+                "generate: %d keyword(s) appear in the optimized wording with no textual basis "
+                "anywhere in the candidate profile — not crediting as added: %s",
+                len(unbacked_keywords), unbacked_keywords,
+            )
+
         render_layout, layout_preserved = self._build_render_layout(ranked.profile, layout_document, patches)
 
         return {

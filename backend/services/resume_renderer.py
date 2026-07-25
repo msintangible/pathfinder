@@ -7,12 +7,31 @@ from jinja2 import Environment, FileSystemLoader
 from markupsafe import Markup, escape
 from xhtml2pdf import pisa
 
-from services.resume_section_order import DEFAULT_SECTION_ORDER
-
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 _env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), autoescape=True)
+
+# The one fixed section order every resume is rendered with, now that this
+# template is the sole renderer (in-place docx/pdf editing is no longer
+# wired in — see api/v1/resume.py). Previously this deferred to each
+# candidate's own document structure via resume_section_order.py's
+# inference, which doesn't apply anymore now that every resume shares this
+# same layout regardless of how it was originally formatted.
+CANONICAL_SECTION_ORDER = [
+    "summary",
+    "education",
+    "experience",
+    "projects",
+    "skills",
+    "certifications",
+    "awards",
+    "leadership",
+    "volunteering",
+    "publications",
+    "interests",
+    "references",
+]
 
 
 def _markdown_emphasis(value: str | None) -> Markup:
@@ -38,16 +57,11 @@ class PDFRenderError(Exception):
 
 def render_pdf(optimized_resume: dict, section_order: list[str] | None = None) -> bytes:
     """
-    Render an OptimizedResume dict to PDF bytes via the resume.html template.
-
-    section_order controls which order the Skills/Experience/Projects
-    sections appear in (see services/resume_section_order.py) — this can't
-    reproduce the candidate's original fonts/spacing (that's the in-place
-    renderers' job), but at least keeps the fallback's section order
-    consistent with their real document's, instead of always using a fixed
-    order regardless of source.
+    Render an OptimizedResume dict to PDF bytes via the resume.html template,
+    using CANONICAL_SECTION_ORDER unless a caller overrides it (tests only —
+    production always renders with the one fixed layout).
     """
-    order = section_order or DEFAULT_SECTION_ORDER
+    order = section_order or CANONICAL_SECTION_ORDER
     logger.debug("render_pdf: using section_order=%s", order)
     html = _env.get_template("resume.html").render(section_order=order, **optimized_resume)
 

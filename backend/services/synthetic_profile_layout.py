@@ -48,6 +48,8 @@ def build_synthetic_layout(ranked_profile: dict) -> ResumeLayoutDocument:
     for i, project in enumerate(ranked_profile.get("projects") or []):
         blocks.append(_block(f"projects[{i}].description", project.get("description") or ""))
         blocks.append(_block(f"projects[{i}].technologies", join_comma_list(project.get("technologies"))))
+        for k, achievement in enumerate(project.get("notable_achievements") or []):
+            blocks.append(_block(f"projects[{i}].achievements[{k}]", achievement or ""))
 
     return ResumeLayoutDocument(source_format="synthetic", sections=[LayoutSection(section_id="profile", blocks=blocks)])
 
@@ -79,6 +81,7 @@ def flatten_layout_to_resume(ranked_profile: dict, layout: ResumeLayoutDocument)
 
     projects = []
     for i, project in enumerate(ranked_profile.get("projects") or []):
+        achievement_count = len(project.get("notable_achievements") or [])
         projects.append({
             "name": project.get("name"),
             "description": text_by_id[f"projects[{i}].description"] or None,
@@ -86,7 +89,7 @@ def flatten_layout_to_resume(ranked_profile: dict, layout: ResumeLayoutDocument)
             "technologies": split_comma_list(text_by_id[f"projects[{i}].technologies"]),
             "bullets": [item for item in [
                 text_by_id[f"projects[{i}].description"] or "",
-                *project.get("notable_achievements", []),
+                *[text_by_id[f"projects[{i}].achievements[{k}]"] for k in range(achievement_count)],
             ] if item],
         })
 

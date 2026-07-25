@@ -5,7 +5,11 @@ from services.keyword_matcher import KeywordReport
 # Caps keep the LLM optimization payload focused on what's relevant to the
 # job, the same latency/token rationale as JobAnalysisAgent's text truncation.
 _MAX_WORK_EXPERIENCE = 5
-_MAX_PROJECTS = 6
+# The final rendered resume shows at most 3 projects (a hard product
+# requirement, not just a token-budget one) — capping here, not just at
+# render time, since entry order/count downstream is copied straight through
+# from this ranked list (see resume_generation_agent.py/synthetic_profile_layout.py).
+_MAX_PROJECTS = 3
 _MAX_GITHUB_REPOS = 4
 
 

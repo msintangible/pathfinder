@@ -39,6 +39,15 @@ def test_caps_github_repositories_to_max_four():
     assert len(ranked.profile["github_repositories"]) == 4
 
 
+def test_caps_projects_to_max_three():
+    profile = {"projects": [{"name": f"project-{i}"} for i in range(10)]}
+    report = KeywordReport(matched=[], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    assert len(ranked.profile["projects"]) == 3
+
+
 def test_missing_sections_become_empty_lists():
     ranked = rank_profile({}, KeywordReport(matched=[], missing=[]))
 

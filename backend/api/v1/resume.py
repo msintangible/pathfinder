@@ -1,6 +1,5 @@
 import logging
 import uuid
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,32 +14,25 @@ from models.user import User
 from schemas.jobs import JobResponse
 from schemas.profile import CandidateProfile
 from schemas.resume import GenerateResumeRequest, ResumeGenerationResponse
-from schemas.resume_layout import ResumeLayoutDocument
-from services.docx_renderer_v2 import render_docx
 from services.llm_output import LLMOutputError
-from services.pdf_renderer_v2 import render_pdf as render_pdf_in_place
 from services.repository.job_repository import JobRepository
 from services.repository.profile_repository import ProfileRepository
 from services.repository.resume_repository import ResumeRepository
 from services.resume_generation_agent import ResumeGenerationAgent
-from services.resume_renderer import render_pdf as render_pdf_template
-from services.resume_section_order import infer_section_order
+from services.resume_page_fitter import render_within_page_limit
+from services.resume_validator import validate_resume_structure
 from services.storage.local_storage import LocalResumeStorage
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
-# Media type per rendered_file_format — a source document (docx or pdf) edited
-# in place (see docx_renderer_v2.py / pdf_renderer_v2.py) when layout_preserved
-# is True; the generic Jinja2-rendered PDF (see resume_renderer.py) otherwise.
+# Media type per rendered_file_format — always "pdf" now that every resume is
+# rendered via the generic Jinja2/xhtml2pdf template (see resume_renderer.py).
 _MEDIA_TYPES = {
     "pdf": "application/pdf",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
-
-# TEMP DEBUG FLAG — set back to False to restore in-place rendering.
-_DEBUG_FORCE_TEMPLATE_RENDER = True
 
 
 def _profile_to_dict(profile: UserProfile) -> dict:
@@ -51,52 +43,28 @@ def _job_to_dict(job: Job) -> dict:
     return JobResponse.model_validate(job, from_attributes=True).model_dump(mode="json")
 
 
-def _render_resume(profile: UserProfile, result: dict) -> tuple[bytes, str, bool]:
+def _render_resume(profile: UserProfile, result: dict) -> tuple[bytes, str, bool, dict]:
     """
-    Renders the candidate's actual uploaded file in place when the agent
-    produced a confidently-correlated render_layout (see
-    ResumeGenerationAgent._build_render_layout); otherwise falls back to the
-    generic Jinja2/xhtml2pdf template, unconditionally rendered from
-    optimized_resume so a low-confidence or missing correlation never blocks
-    generation, it only loses layout preservation for this run. The fallback
-    still uses profile.layout_document's inferred section order (see
-    resume_section_order.py) even when it can't preserve real formatting.
+    Renders optimized_resume via the generic Jinja2/xhtml2pdf template using
+    its one fixed canonical section order (see resume_renderer.py).
+    layout_preserved is always False since in-place rendering is no longer
+    used — kept in the return shape because ResumeGenerationResponse/
+    ResumeVersion still carry the field.
+
+    Trims the lowest-relevance project/experience entry and re-renders if
+    the result would exceed the 2-page budget (see resume_page_fitter.py),
+    returning whichever resume was actually rendered so callers persist and
+    display exactly what the PDF shows. Logs any structural completeness
+    gaps (see resume_validator.py) without blocking generation on them —
+    e.g. a candidate with no portfolio link is a real gap, not a bug to
+    reject the resume over.
     """
-    # TEMP DEBUG: force the generic template renderer, bypassing in-place
-    # rendering entirely. Flip back to False when done comparing.
-    if _DEBUG_FORCE_TEMPLATE_RENDER:
-        section_order = infer_section_order(profile.layout_document)
-        return render_pdf_template(result["optimized_resume"], section_order=section_order), "pdf", False
+    resume = result["optimized_resume"]
+    for issue in validate_resume_structure(resume):
+        logger.warning("profile %s: resume structure issue — %s", profile.id, issue)
 
-    if result["layout_preserved"] and profile.source_document_path:
-        source_bytes = Path(profile.source_document_path).read_bytes()
-        render_layout = ResumeLayoutDocument.model_validate(result["render_layout"])
-
-        if profile.source_document_format == "docx":
-            logger.info("profile %s: rendering in place via docx_renderer_v2", profile.id)
-            return render_docx(source_bytes, render_layout), "docx", True
-
-        if profile.source_document_format == "pdf":
-            logger.info("profile %s: rendering in place via pdf_renderer_v2", profile.id)
-            pdf_result = render_pdf_in_place(source_bytes, render_layout)
-            if pdf_result.low_confidence_block_ids:
-                logger.info(
-                    "profile %s: %d block(s) rendered with a substituted font or truncated text: %s",
-                    profile.id, len(pdf_result.low_confidence_block_ids), pdf_result.low_confidence_block_ids,
-                )
-            return pdf_result.pdf_bytes, "pdf", True
-
-        logger.warning(
-            "profile %s: layout_preserved=True but source_document_format=%r is neither docx nor pdf — falling back",
-            profile.id, profile.source_document_format,
-        )
-    elif not profile.source_document_path:
-        logger.info("profile %s: no source document — falling back to the generic template", profile.id)
-    else:
-        logger.info("profile %s: layout correlation wasn't confident enough this run — falling back", profile.id)
-
-    section_order = infer_section_order(profile.layout_document)
-    return render_pdf_template(result["optimized_resume"], section_order=section_order), "pdf", False
+    pdf_bytes, rendered_resume = render_within_page_limit(resume)
+    return pdf_bytes, "pdf", False, rendered_resume
 
 
 @router.post("/generate", response_model=ResumeGenerationResponse)
@@ -129,7 +97,7 @@ async def generate_resume(
     except LLMOutputError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    rendered_bytes, rendered_file_format, layout_preserved = _render_resume(profile, result)
+    rendered_bytes, rendered_file_format, layout_preserved, rendered_resume = _render_resume(profile, result)
 
     storage = LocalResumeStorage()
     rendered_file_path = storage.save(rendered_bytes, f"{uuid.uuid4().hex}.{rendered_file_format}")
@@ -138,7 +106,7 @@ async def generate_resume(
     resume = await resume_repo.create_from_generation(
         user_profile_id=body.user_profile_id,
         job_id=body.job_id,
-        optimized_resume=result["optimized_resume"],
+        optimized_resume=rendered_resume,
         matched_keywords=result["matched_keywords"],
         missing_keywords=result["missing_keywords"],
         added_keywords=result["added_keywords"],

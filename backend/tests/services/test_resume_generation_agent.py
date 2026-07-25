@@ -141,6 +141,39 @@ async def test_computes_ats_score_deterministically(mock_genai):
 
 
 @pytest.mark.anyio
+async def test_added_keywords_excludes_ones_with_no_basis_in_the_profile(mock_genai):
+    """A missing_keyword the LLM wove into wording only counts as genuinely
+    added if the candidate profile has real evidence for it somewhere (see
+    keyword_matcher.filter_backed_keywords) — otherwise it's a fabrication
+    the prompt's "never invent" rule should have caught but didn't."""
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {
+                "title": "Software Engineer", "company": "Acme Corp",
+                "bullets": ["Deployed services with Kubernetes"], "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python", "Kubernetes", "Terraform"]}
+    patches = {
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": "Backend engineer experienced with Kubernetes and Terraform."},
+            {"block_id": "skills", "new_text": "Python"},
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Deployed services with Kubernetes"},
+            {"block_id": "changes_summary", "new_text": "Wove in Kubernetes and Terraform."},
+        ]
+    }
+    mock_genai.aio.models.generate_content.return_value = _make_response(patches)
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert result["added_keywords"] == ["Kubernetes"]
+
+
+@pytest.mark.anyio
 async def test_calls_model_exactly_once(mock_genai):
     mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
 
@@ -472,10 +505,10 @@ def test_prompt_asks_for_changes_summary():
 
 
 def test_prompt_gives_length_guidance_for_every_block_type():
-    """Regression guard: summary/skills/bullets each render into a fixed-size
-    area of the original document, so a future prompt edit must not silently
-    drop their length guidance — that's what keeps rendered text from being
-    truncated."""
+    """Regression guard: unbounded growth in any block risks pushing the
+    whole resume past the 2-page budget, where resume_page_fitter.py trims an
+    entire entry rather than one bullet — so a future prompt edit must not
+    silently drop this length guidance."""
     normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
     assert "roughly the same length" in normalized_prompt  # summary
     assert "compactly" in normalized_prompt  # skills
