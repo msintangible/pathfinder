@@ -51,6 +51,12 @@ class ResumeVersion(Base, PrimaryKeyMixin):
     # ATS keyword match score (0–100), set by ATS Optimisation Agent
     ats_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
 
+    # Full OptimizationReport (see schemas/resume.py) — before/after scores,
+    # skills/bullet/project change counts, and the model's own grouped
+    # highlights and keyword-skip reasons. Nullable since rows created before
+    # this field existed have none.
+    report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Set by the render worker once the file is ready. format is "pdf" (built
     # from templates/resume.html, or the candidate's original pdf edited in
     # place — see layout_preserved) or "docx" (the candidate's original file,

@@ -71,7 +71,7 @@ _EXPECTED_OPTIMIZED_RESUME = {
     "summary": "Backend engineer with Python and AWS experience.",
     "links": {},
     "skills": ["Python", "AWS"],
-    "skill_groups": [{"label": "Technical", "items": ["Python", "AWS"]}],
+    "skill_groups": [{"label": "Additional", "items": ["Python", "AWS"]}],
     "experience": [
         {
             "title": "Software Engineer",
@@ -120,12 +120,17 @@ async def test_returns_full_pipeline_output_shape(mock_genai):
 
     assert set(result.keys()) == {
         "ats_score", "matched_keywords", "missing_keywords", "added_keywords", "optimized_resume",
-        "patches", "render_layout", "layout_preserved",
+        "patches", "render_layout", "layout_preserved", "report",
     }
     assert result["optimized_resume"] == _EXPECTED_OPTIMIZED_RESUME
     assert result["patches"] == _PATCHES_RESPONSE["patches"]
     assert result["render_layout"] is None  # no layout_document was given
     assert result["layout_preserved"] is False
+    assert set(result["report"].keys()) == {
+        "ats_score_before", "ats_score_after", "matched_keywords_before", "matched_keywords_after",
+        "keywords_added", "keywords_skipped", "unused_candidate_skills", "skills_reordered",
+        "summary_rewritten", "experience_bullets_modified", "projects_modified", "highlights",
+    }
 
 
 @pytest.mark.anyio
@@ -180,6 +185,146 @@ async def test_calls_model_exactly_once(mock_genai):
     await ResumeGenerationAgent().generate(_PROFILE, _JOB)
 
     assert mock_genai.aio.models.generate_content.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Optimization report
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_report_computes_before_after_scores_and_pass_through_reasoning(mock_genai):
+    profile = {
+        "technical_skills": ["Python"],
+        "devops_tools": ["Docker"],  # not relevant to this job — should surface as unused
+        "work_experience": [
+            {
+                "title": "Software Engineer", "company": "Acme Corp",
+                "bullets": ["Built APIs with Python"], "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python", "Kubernetes", "Terraform"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": "Backend engineer experienced with Python."},
+            {"block_id": "skills", "new_text": "Python"},
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python"},
+        ],
+        "highlights": [
+            {"section": "Experience", "summary": "Reworded bullet for clarity.", "impact": "medium"},
+        ],
+        "keywords_skipped": [
+            {"keyword": "Terraform", "reason": "No demonstrated Terraform experience in the profile."},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+    report = result["report"]
+
+    # 1 of 3 job keywords (Python) is present; neither Kubernetes nor
+    # Terraform got woven into the wording, so before/after are identical.
+    assert report["ats_score_before"] == pytest.approx(33.33)
+    assert report["ats_score_after"] == pytest.approx(33.33)
+    assert report["matched_keywords_before"] == 1
+    assert report["matched_keywords_after"] == 1
+    assert report["keywords_added"] == []
+    assert report["keywords_skipped"] == [
+        {"keyword": "Terraform", "reason": "No demonstrated Terraform experience in the profile."},
+    ]
+    assert report["unused_candidate_skills"] == ["Docker"]
+    assert report["skills_reordered"] is False
+    assert report["summary_rewritten"] is True
+    assert report["experience_bullets_modified"] == 1
+    assert report["projects_modified"] == 0
+    assert report["highlights"] == [
+        {"section": "Experience", "summary": "Reworded bullet for clarity.", "impact": "medium"},
+    ]
+
+
+@pytest.mark.anyio
+async def test_report_after_score_credits_a_genuinely_woven_in_keyword(mock_genai):
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {
+                "title": "Software Engineer", "company": "Acme Corp",
+                "bullets": ["Deployed services with Kubernetes"], "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python", "Kubernetes"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            {"block_id": "skills", "new_text": "Python"},
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Deployed services with Kubernetes"},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+    report = result["report"]
+
+    assert report["ats_score_before"] == pytest.approx(50.0)  # 1 of 2
+    assert report["ats_score_after"] == pytest.approx(100.0)  # Kubernetes now credited
+    assert report["matched_keywords_after"] == 2
+    assert report["keywords_added"] == ["Kubernetes"]
+
+
+@pytest.mark.anyio
+async def test_report_detects_skills_reordering(mock_genai):
+    profile = {
+        "technical_skills": ["Python", "Go"],
+        "programming_languages": ["Java"],
+        "work_experience": [],
+        "projects": [],
+    }
+    job = {"skills": ["Java"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            # Reordered to lead with the job-relevant skill, unlike the
+            # profile's own field order (technical_skills before
+            # programming_languages).
+            {"block_id": "skills", "new_text": "Java, Python, Go"},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert result["report"]["skills_reordered"] is True
+
+
+@pytest.mark.anyio
+async def test_report_counts_modified_project_entries(mock_genai):
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [],
+        "projects": [
+            {"name": "Project A", "description": "Built a tool.", "technologies": ["Python"]},
+            {"name": "Project B", "description": "Built another tool.", "technologies": ["Python"]},
+        ],
+    }
+    job = {"skills": ["Python"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            {"block_id": "skills", "new_text": "Python"},
+            {"block_id": "projects[0].description", "new_text": "Built a genuinely useful tool."},
+            {"block_id": "projects[0].technologies", "new_text": "Python"},
+            {"block_id": "projects[1].description", "new_text": "Built another tool."},  # unchanged
+            {"block_id": "projects[1].technologies", "new_text": "Python"},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert result["report"]["projects_modified"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -499,9 +644,23 @@ async def test_uses_json_response_mode_and_zero_temperature(mock_genai):
     assert config.temperature == 0
 
 
-def test_prompt_asks_for_changes_summary():
-    """Regression guard: a future prompt edit must not silently drop the field the schema expects."""
-    assert "changes_summary" in _SYSTEM_PROMPT
+def test_prompt_tells_model_to_leave_changes_summary_blank():
+    """Regression guard: changes_summary is replaced by the structured
+    highlights/keywords_skipped report — the prompt must still mention the
+    block by name (it's still a block_id the model is given) so the model
+    knows to blank it rather than resume writing prose into it."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "changes_summary, which this pipeline no longer displays" in normalized_prompt
+
+
+def test_prompt_asks_for_grouped_highlights_and_keyword_skip_reasons():
+    """Regression guard: this is what fixes the old per-block "I emphasized
+    X" / "I highlighted Y" repetitive changes_summary output — a future
+    prompt edit must not silently drop the structured replacement."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "one entry per *section* you touched" in normalized_prompt
+    assert "keywords_skipped" in normalized_prompt
+    assert '"impact": "high" | "medium" | "low"' in normalized_prompt
 
 
 def test_prompt_gives_length_guidance_for_every_block_type():
@@ -512,7 +671,23 @@ def test_prompt_gives_length_guidance_for_every_block_type():
     normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
     assert "roughly the same length" in normalized_prompt  # summary
     assert "compactly" in normalized_prompt  # skills
-    assert "15%" in normalized_prompt  # experience bullets
+    assert "1-2 lines" in normalized_prompt  # experience bullets
+
+
+def test_prompt_instructs_bolding_key_technologies_and_metrics():
+    """Regression guard: the emphasis filter (**text** -> <strong>) only has
+    an effect if the prompt actually tells the model to use it."""
+    assert "**double asterisks**" in _SYSTEM_PROMPT
+
+
+def test_prompt_explains_soft_skill_and_process_keywords_can_be_truthfully_implied():
+    """Regression guard: without this, the model tends to only surface
+    literal technology-name keywords and skip general/process ones (e.g.
+    "problem solving", "full lifecycle development", "data science") even
+    when genuinely implied by real project work."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "full lifecycle development" in normalized_prompt
+    assert "data science" in normalized_prompt
 
 
 def test_prompt_explains_the_patch_contract():

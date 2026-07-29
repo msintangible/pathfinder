@@ -131,14 +131,32 @@ await test("both present, no prior result: button enabled, labeled Optimize CV",
   assert(btn.textContent === Message.OPTIMIZE_CV, "button label");
 });
 
-await test("generate success: renders ATS score, keywords, changes, and Open Resume", async () => {
+const REPORT = {
+  ats_score_before: 82.4,
+  ats_score_after: 82.4,
+  matched_keywords_before: 2,
+  matched_keywords_after: 2,
+  keywords_added: [],
+  keywords_skipped: [],
+  unused_candidate_skills: [],
+  skills_reordered: false,
+  summary_rewritten: true,
+  experience_bullets_modified: 0,
+  projects_modified: 0,
+  highlights: [
+    { section: "Summary", summary: "Reworded summary to emphasize backend experience.", impact: "high" },
+  ],
+};
+
+await test("generate success: renders ATS score, keywords, highlights, and Open Resume", async () => {
   const generateResult = {
     ok: true,
     data: {
       ats_score: 82.4,
       matched_keywords: ["Python", "AWS"],
       missing_keywords: ["Kubernetes"],
-      optimized_resume: { changes_summary: ["Reworded summary to emphasize backend experience."] },
+      optimized_resume: { changes_summary: [] },
+      report: REPORT,
       download_url: "/v1/resumes/abc/download",
     },
   };
@@ -158,10 +176,13 @@ await test("generate success: renders ATS score, keywords, changes, and Open Res
   assert(saveMsg?.payload?.tabId === 1 && saveMsg.payload.data === generateResult.data, "SAVE_RESUME_RESULT persisted");
 
   assert(root.querySelector(".opt-score").textContent.includes("82"), "ATS score rendered");
-  assert(root.querySelectorAll(".badge--ok").length === 2, "2 matched keyword pills");
+  assert(root.querySelectorAll(".badge--ok").length === 3, "2 matched keyword pills + 1 high-impact highlight badge");
   assert(root.querySelectorAll(".badge--err").length === 1, "1 missing keyword pill");
-  const changes = Array.from(root.querySelectorAll(".opt-changes li")).map((li) => li.textContent);
-  assert(changes.includes("Reworded summary to emphasize backend experience."), `changes: ${changes}`);
+  const highlights = Array.from(root.querySelectorAll(".opt-highlights li")).map((li) => li.textContent.trim());
+  assert(
+    highlights.includes("high Summary: Reworded summary to emphasize backend experience."),
+    `highlights: ${highlights}`
+  );
 
   const btn = root.querySelector("#optimize-cv");
   assert(btn.disabled === false && btn.textContent === Message.REOPTIMIZE, "button relabeled Re-optimize");
@@ -173,6 +194,85 @@ await test("generate success: renders ATS score, keywords, changes, and Open Res
   assert(
     tabsCreated[0]?.url === "http://localhost:8003/v1/resumes/abc/download?token=test-token",
     `opened URL: ${tabsCreated[0]?.url}`
+  );
+});
+
+await test("generate success: renders before/after ATS score when the optimization changed it", async () => {
+  const generateResult = {
+    ok: true,
+    data: {
+      ats_score: 91,
+      matched_keywords: ["Python", "AWS", "Kubernetes"],
+      missing_keywords: [],
+      optimized_resume: { changes_summary: [] },
+      report: { ...REPORT, ats_score_before: 72, ats_score_after: 91 },
+      download_url: "/v1/resumes/abc/download",
+    },
+  };
+  const { root } = await mountController({ profileId: "p1", jobAnalysis: job, generateResult });
+
+  root.querySelector("#optimize-cv").click();
+  await flush();
+
+  assert(root.querySelector(".opt-score").textContent === "ATS score: 72 → 91", root.querySelector(".opt-score").textContent);
+});
+
+await test("generate success: renders skipped keywords with reasons, excluded from Missing pills", async () => {
+  const generateResult = {
+    ok: true,
+    data: {
+      ats_score: 82.4,
+      matched_keywords: ["Python"],
+      missing_keywords: ["Redis", "Terraform"],
+      optimized_resume: { changes_summary: [] },
+      report: {
+        ...REPORT,
+        keywords_skipped: [
+          { keyword: "Redis", reason: "No demonstrated Redis experience in the profile." },
+          { keyword: "Terraform", reason: "No evidence in the candidate profile." },
+        ],
+      },
+      download_url: "/v1/resumes/abc/download",
+    },
+  };
+  const { root } = await mountController({ profileId: "p1", jobAnalysis: job, generateResult });
+
+  root.querySelector("#optimize-cv").click();
+  await flush();
+
+  assert(root.querySelectorAll(".badge--err").length === 0, "no plain Missing pills once both have skip reasons");
+  const notAdded = Array.from(root.querySelectorAll(".opt-keywords")).find(
+    (el) => el.querySelector(".opt-keywords-heading")?.textContent === "Not added"
+  );
+  assert(notAdded, "Not added section present");
+  const lines = Array.from(notAdded.querySelectorAll("li")).map((li) => li.textContent);
+  assert(
+    lines.includes("Redis — No demonstrated Redis experience in the profile."),
+    `not-added lines: ${lines}`
+  );
+});
+
+await test("generate success: renders unused candidate skills", async () => {
+  const generateResult = {
+    ok: true,
+    data: {
+      ats_score: 82.4,
+      matched_keywords: ["Python"],
+      missing_keywords: [],
+      optimized_resume: { changes_summary: [] },
+      report: { ...REPORT, unused_candidate_skills: ["Docker", "Terraform"] },
+      download_url: "/v1/resumes/abc/download",
+    },
+  };
+  const { root } = await mountController({ profileId: "p1", jobAnalysis: job, generateResult });
+
+  root.querySelector("#optimize-cv").click();
+  await flush();
+
+  const unusedPills = Array.from(root.querySelectorAll(".badge--neutral")).map((b) => b.textContent);
+  assert(
+    unusedPills.includes("Docker") && unusedPills.includes("Terraform"),
+    `unused pills: ${unusedPills}`
   );
 });
 

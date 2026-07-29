@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -93,15 +94,57 @@ class OptimizedResume(BaseModel):
         return value if value is not None else {}
 
 
+class ChangeHighlight(BaseModel):
+    """One grouped, section-level line in an OptimizationReport — the
+    LLM-authored replacement for changes_summary's old per-block prose."""
+    section: str
+    summary: str
+    impact: Literal["high", "medium", "low"]
+
+
+class KeywordSkipReason(BaseModel):
+    """Why a specific missing_keyword was deliberately not woven in."""
+    keyword: str
+    reason: str
+
+
+class OptimizationReport(BaseModel):
+    """
+    Everything about *how* the resume was optimized, as opposed to
+    OptimizedResume which is the resume content itself. Only `highlights`
+    and `keywords_skipped` require the model's judgment; every other field
+    is derived deterministically in code from the same generation run (see
+    resume_generation_agent.py), so counts/scores can't drift from what
+    actually happened.
+    """
+    ats_score_before: float
+    ats_score_after: float
+    matched_keywords_before: int
+    matched_keywords_after: int
+    keywords_added: list[str] = []
+    keywords_skipped: list[KeywordSkipReason] = []
+    unused_candidate_skills: list[str] = []
+    skills_reordered: bool = False
+    summary_rewritten: bool = False
+    experience_bullets_modified: int = 0
+    projects_modified: int = 0
+    highlights: list[ChangeHighlight] = []
+
+
 class OptimizationPatchResponse(BaseModel):
     """
     The optimization LLM's actual output contract: it only ever returns
     ContentPatch[] keyed by the block_ids it was given (see
     services/synthetic_profile_layout.py) — never a restructured resume
     object directly. A deterministic post-step (Patch Engine + flattening)
-    reconstructs OptimizedResume's external shape from this.
+    reconstructs OptimizedResume's external shape from this. highlights and
+    keywords_skipped are the model's own reasoning (see OptimizationReport);
+    everything else in the final report is computed from patches, not asked
+    of the model.
     """
     patches: list[ContentPatch]
+    highlights: list[ChangeHighlight] = []
+    keywords_skipped: list[KeywordSkipReason] = []
 
 
 class ResumeGenerationResponse(BaseModel):
@@ -115,6 +158,9 @@ class ResumeGenerationResponse(BaseModel):
     # truthfully present in the rendered text.
     added_keywords: list[str] = []
     optimized_resume: OptimizedResume
+    # See OptimizationReport — before/after scores, change counts, and the
+    # model's own grouped highlights/keyword-skip reasoning.
+    report: OptimizationReport
     download_url: str
     # True when the candidate's own uploaded docx/pdf was edited in place
     # (docx_renderer_v2.py / pdf_renderer_v2.py); False when generation fell

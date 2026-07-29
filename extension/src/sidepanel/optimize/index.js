@@ -84,16 +84,83 @@ async function openResume(downloadUrl) {
   chrome.tabs.create({ url: url.toString() });
 }
 
-/** Render the keyword match, ATS score, change explanation, and PDF link. */
+// impact ("high"/"medium"/"low", see schemas/resume.py::ChangeHighlight) reuses
+// the existing ok/warn/neutral badge palette rather than adding new colors —
+// high-impact changes are the "best outcome" (green), not a warning.
+const IMPACT_BADGE_VARIANT = { high: "ok", medium: "warn", low: "neutral" };
+
+function impactBadge(impact) {
+  const span = document.createElement("span");
+  span.className = `badge badge--${IMPACT_BADGE_VARIANT[impact] ?? "neutral"}`;
+  span.textContent = impact;
+  return span;
+}
+
+/** "Not added" list — one line per keyword the optimizer deliberately skipped, with its reason. */
+function skippedKeywordsSection(skipped) {
+  const wrap = document.createElement("div");
+  wrap.className = "opt-keywords";
+
+  const heading = document.createElement("p");
+  heading.className = "opt-keywords-heading";
+  heading.textContent = "Not added";
+  wrap.appendChild(heading);
+
+  const ul = document.createElement("ul");
+  ul.className = "opt-changes";
+  for (const { keyword, reason } of skipped) {
+    const li = document.createElement("li");
+    li.textContent = `${keyword} — ${reason}`;
+    ul.appendChild(li);
+  }
+  wrap.appendChild(ul);
+
+  return wrap;
+}
+
+/** "What changed" — one grouped, impact-rated line per section the optimizer touched. */
+function highlightsSection(highlights) {
+  const wrap = document.createElement("div");
+
+  const heading = document.createElement("p");
+  heading.className = "opt-changes-heading";
+  heading.textContent = "What changed";
+  wrap.appendChild(heading);
+
+  const ul = document.createElement("ul");
+  ul.className = "opt-changes opt-highlights";
+  for (const { section, summary, impact } of highlights) {
+    const li = document.createElement("li");
+    li.appendChild(impactBadge(impact));
+    const text = document.createElement("span");
+    text.className = "opt-highlight-text";
+    text.textContent = ` ${section}: ${summary}`;
+    li.appendChild(text);
+    ul.appendChild(li);
+  }
+  wrap.appendChild(ul);
+
+  return wrap;
+}
+
+/** Render the keyword match, ATS score, optimization report, and PDF link. */
 function renderResult(container, result) {
   container.innerHTML = "";
+
+  const report = result.report ?? {};
+  const skipped = report.keywords_skipped ?? [];
+  const skippedTerms = new Set(skipped.map(({ keyword }) => keyword));
 
   // Keyword sections lead the panel — added_keywords is a subset of
   // missing_keywords (see services/keyword_matcher.py::find_added_keywords
   // on the backend), so it's excluded from "Missing" once shown under
-  // "Added" rather than appearing, confusingly, in both.
+  // "Added" rather than appearing, confusingly, in both. Keywords with an
+  // explicit skip reason move to the "Not added" list below instead of the
+  // plain "Missing keywords" pills, so each keyword only appears once.
   const added = result.added_keywords ?? [];
-  const stillMissing = (result.missing_keywords ?? []).filter((kw) => !added.includes(kw));
+  const stillMissing = (result.missing_keywords ?? []).filter(
+    (kw) => !added.includes(kw) && !skippedTerms.has(kw)
+  );
 
   if (added.length) {
     container.appendChild(keywordSection("Added to your CV", added, "warn"));
@@ -104,27 +171,25 @@ function renderResult(container, result) {
   if (stillMissing.length) {
     container.appendChild(keywordSection("Missing keywords", stillMissing, "err"));
   }
+  if (report.unused_candidate_skills?.length) {
+    container.appendChild(keywordSection("Not used for this role", report.unused_candidate_skills, "neutral"));
+  }
 
+  const scoreBefore = report.ats_score_before;
+  const scoreAfter = report.ats_score_after ?? result.ats_score;
   const score = document.createElement("p");
   score.className = "opt-score";
-  score.textContent = `ATS score: ${Math.round(result.ats_score)}`;
+  score.textContent =
+    scoreBefore != null && Math.round(scoreBefore) !== Math.round(scoreAfter)
+      ? `ATS score: ${Math.round(scoreBefore)} → ${Math.round(scoreAfter)}`
+      : `ATS score: ${Math.round(scoreAfter)}`;
   container.appendChild(score);
 
-  const changes = result.optimized_resume?.changes_summary;
-  if (changes?.length) {
-    const heading = document.createElement("p");
-    heading.className = "opt-changes-heading";
-    heading.textContent = "What changed";
-    container.appendChild(heading);
-
-    const ul = document.createElement("ul");
-    ul.className = "opt-changes";
-    for (const change of changes) {
-      const li = document.createElement("li");
-      li.textContent = change;
-      ul.appendChild(li);
-    }
-    container.appendChild(ul);
+  if (report.highlights?.length) {
+    container.appendChild(highlightsSection(report.highlights));
+  }
+  if (skipped.length) {
+    container.appendChild(skippedKeywordsSection(skipped));
   }
 
   const openResumeBtn = document.createElement("button");

@@ -111,6 +111,7 @@ async def generate_resume(
         missing_keywords=result["missing_keywords"],
         added_keywords=result["added_keywords"],
         ats_score=result["ats_score"],
+        report=result["report"],
         rendered_file_url=rendered_file_path,
         rendered_file_format=rendered_file_format,
         layout_preserved=layout_preserved,
@@ -122,6 +123,7 @@ async def generate_resume(
         missing_keywords=resume.missing_keywords or [],
         added_keywords=resume.added_keywords or [],
         optimized_resume=resume.content,
+        report=resume.report,
         download_url=f"/v1/resumes/{resume.id}/download",
         layout_preserved=resume.layout_preserved,
     )

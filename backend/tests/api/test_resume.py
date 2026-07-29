@@ -28,6 +28,21 @@ def _job(job_id: uuid.UUID) -> Job:
     return Job(id=job_id, raw_text="x", analyzed_at=datetime.now(timezone.utc))
 
 
+_REPORT = {
+    "ats_score_before": 87.5,
+    "ats_score_after": 87.5,
+    "matched_keywords_before": 1,
+    "matched_keywords_after": 1,
+    "keywords_added": [],
+    "keywords_skipped": [],
+    "unused_candidate_skills": [],
+    "skills_reordered": False,
+    "summary_rewritten": False,
+    "experience_bullets_modified": 0,
+    "projects_modified": 0,
+    "highlights": [],
+}
+
 _GENERATION_RESULT = {
     "optimized_resume": {
         "headline": "Engineer",
@@ -44,6 +59,7 @@ _GENERATION_RESULT = {
     "patches": [],
     "render_layout": None,
     "layout_preserved": False,
+    "report": _REPORT,
 }
 
 
@@ -119,6 +135,7 @@ def test_generate_succeeds_for_own_profile(client, tmp_path):
                 matched_keywords=["python"],
                 missing_keywords=[],
                 ats_score=87.5,
+                report=_REPORT,
                 layout_preserved=False,
             )
         )
@@ -131,8 +148,10 @@ def test_generate_succeeds_for_own_profile(client, tmp_path):
         assert resp.status_code == 200
         assert resp.json()["download_url"] == f"/v1/resumes/{resume_id}/download"
         assert resp.json()["layout_preserved"] is False
+        assert resp.json()["report"] == _REPORT
         mock_render_within_page_limit.assert_called_once()
         assert mock_resume_repo_cls.return_value.create_from_generation.call_args.kwargs["layout_preserved"] is False
+        assert mock_resume_repo_cls.return_value.create_from_generation.call_args.kwargs["report"] == _REPORT
 
 
 def test_generate_always_uses_template_renderer_regardless_of_source_document(client, tmp_path):
@@ -169,6 +188,7 @@ def test_generate_always_uses_template_renderer_regardless_of_source_document(cl
                 id=resume_id, user_profile_id=profile_id, job_id=job_id,
                 content=_GENERATION_RESULT["optimized_resume"],
                 matched_keywords=["python"], missing_keywords=[], ats_score=87.5,
+                report=_REPORT,
                 rendered_file_url=str(tmp_path / "rendered.pdf"), rendered_file_format="pdf",
                 layout_preserved=False,
             )

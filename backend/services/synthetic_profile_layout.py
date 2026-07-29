@@ -14,6 +14,8 @@ where no correlation is possible and generation falls back to the generic
 template renderer.
 """
 
+import re
+
 from schemas.resume_layout import LayoutSection, ResumeLayoutDocument, RunSpan, TextBlock
 
 _LIST_SEPARATOR = ", "
@@ -26,7 +28,11 @@ _SKILL_GROUP_SOURCES = (
     ("DevOps", ("devops_tools",)),
     ("AI / ML", ("ai_ml_tools",)),
     ("Tools", ("development_tools",)),
-    ("Technical", ("technical_skills",)),
+    # technical_skills is deliberately not its own group here — it's
+    # CandidateProfileAgent's catch-all bucket for anything that didn't fit
+    # a more specific category, so a skill sourced only from there falls
+    # through to _build_skill_groups's "Additional" bucket below rather than
+    # getting a confusing "Technical" label inside a "Technical Skills" section.
 )
 
 
@@ -194,5 +200,19 @@ def _normalize_links(links: dict) -> dict:
         if not value:
             continue
         link_key = str(key).strip().lower().replace("_url", "")
-        normalized[link_key] = str(value)
+        normalized[link_key] = _ensure_scheme(str(value).strip())
     return normalized
+
+
+_URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
+
+
+def _ensure_scheme(url: str) -> str:
+    """
+    CandidateProfileAgent often extracts a link as the bare text a resume
+    displays it as (e.g. "linkedin.com/in/jane", no "https://") — rendered
+    as an <a href> verbatim, that's not an absolute URL, so the PDF can't
+    navigate anywhere when clicked. Prepending a scheme is what actually
+    makes the rendered link clickable.
+    """
+    return url if _URL_SCHEME_RE.match(url) else f"https://{url}"

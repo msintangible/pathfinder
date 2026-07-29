@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.candidate_profile_agent import CandidateProfileAgent
+from services.candidate_profile_agent import _SYSTEM_PROMPT, CandidateProfileAgent
 from services.llm_output import LLMOutputError
 from schemas.profile import CandidateProfileInput, RawGitHubRepo
 
@@ -400,6 +400,18 @@ async def test_analyze_dedupes_duplicate_work_experience_from_the_llm(mock_genai
 
     assert len(result["work_experience"]) == 1
     assert set(result["work_experience"][0]["bullets"]) == {"Did X", "Did Y"}
+
+
+# ---------------------------------------------------------------------------
+# Prompt content
+# ---------------------------------------------------------------------------
+
+def test_prompt_asks_for_specific_skill_categorization():
+    """Regression guard: a language landing in technical_skills instead of
+    programming_languages breaks skill grouping on the rendered resume (see
+    synthetic_profile_layout.py's _build_skill_groups) — a future prompt edit
+    must not silently drop this guidance."""
+    assert "technical_skills is only for skills that genuinely don't fit" in _SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,9 @@
-from services.keyword_matcher import filter_backed_keywords, find_added_keywords, match_keywords
+from services.keyword_matcher import (
+    filter_backed_keywords,
+    find_added_keywords,
+    match_keywords,
+    unused_candidate_skills,
+)
 
 
 def test_matches_case_insensitively():
@@ -19,6 +24,22 @@ def test_reports_missing_keywords():
 
     assert report.matched == ["Python"]
     assert report.missing == ["Terraform"]
+
+
+def test_unused_candidate_skills_excludes_skills_the_job_cares_about():
+    profile = {"technical_skills": ["Python", "Docker"], "devops_tools": ["Terraform", "Azure DevOps"]}
+    job = {"skills": ["Python"]}
+
+    result = unused_candidate_skills(profile, job)
+
+    assert result == ["Docker", "Terraform", "Azure DevOps"]
+
+
+def test_unused_candidate_skills_is_empty_when_job_covers_everything():
+    profile = {"technical_skills": ["Python"]}
+    job = {"skills": ["Python"]}
+
+    assert unused_candidate_skills(profile, job) == []
 
 
 def test_searches_across_all_profile_skill_fields():
@@ -202,3 +223,49 @@ def test_matching_is_case_insensitive_for_backing():
 
 def test_empty_profile_backs_nothing():
     assert filter_backed_keywords({}, ["Python"]) == []
+
+
+# ---------------------------------------------------------------------------
+# Paraphrase-aware matching (3+ word keywords) — see _keyword_appears_in
+# ---------------------------------------------------------------------------
+
+def test_backs_a_multiword_keyword_when_most_of_its_words_appear_reworded():
+    profile = {
+        "work_experience": [
+            {"bullets": [
+                "Managed the full project lifecycle from requirements gathering to deployment and maintenance.",
+            ]},
+        ],
+    }
+
+    backed = filter_backed_keywords(profile, ["Full Lifecycle Development"])
+
+    assert backed == ["Full Lifecycle Development"]
+
+
+def test_does_not_back_a_multiword_keyword_sharing_only_one_word():
+    profile = {"work_experience": [{"bullets": ["Delivered custom websites for 10+ clients."]}]}
+
+    backed = filter_backed_keywords(profile, ["Full Lifecycle Development"])
+
+    assert backed == []
+
+
+def test_two_word_keyword_requires_an_exact_match_not_a_shared_word():
+    """A 2-word category label sharing one common word ("data") isn't real
+    evidence — too weak a signal on its own to credit as genuinely backed."""
+    profile = {"work_experience": [{"bullets": ["Used Azure SQL for data persistence."]}]}
+
+    backed = filter_backed_keywords(profile, ["Data Science"])
+
+    assert backed == []
+
+
+def test_find_added_keywords_credits_a_reworded_multiword_keyword():
+    optimized_resume = {
+        "experience": [{"bullets": ["Owned the full lifecycle of each release, from requirements through deployment."]}],
+    }
+
+    added = find_added_keywords(["Full Lifecycle Development"], optimized_resume)
+
+    assert added == ["Full Lifecycle Development"]

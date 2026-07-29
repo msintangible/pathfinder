@@ -19,3 +19,6 @@
 
 .opt-changes { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text); line-height: 1.5; }
 .opt-changes li { margin-bottom: 2px; }
+
+.opt-highlights li { list-style: none; margin-left: -18px; margin-bottom: 6px; }
+.opt-highlight-text { margin-left: 4px; }

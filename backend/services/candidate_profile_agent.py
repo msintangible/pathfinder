@@ -18,6 +18,11 @@ Rules:
 - Don't invent skills, experience, or qualifications not in the input.
 - Don't infer employment history not explicitly stated.
 - Merge the same info from multiple sources into one entry, not duplicates.
+- Classify every skill into the most specific matching category below (e.g.
+  a programming language always goes in programming_languages, never
+  technical_skills, even if it's also mentioned generically elsewhere).
+  technical_skills is only for skills that genuinely don't fit any of the
+  more specific categories — it's a last resort, not a default.
 - Unknown values: null.
 - Unknown arrays: [].
 

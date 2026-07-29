@@ -1,18 +1,27 @@
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from schemas.resume import OptimizationPatchResponse
+from schemas.resume import ChangeHighlight, KeywordSkipReason, OptimizationPatchResponse, OptimizationReport
 from schemas.resume_layout import ContentPatch, ResumeLayoutDocument
 from services.ats_scorer import compute_ats
-from services.keyword_matcher import KeywordReport, filter_backed_keywords, find_added_keywords, match_keywords
+from services.keyword_matcher import (
+    PROFILE_SKILL_FIELDS,
+    KeywordReport,
+    filter_backed_keywords,
+    find_added_keywords,
+    match_keywords,
+    unused_candidate_skills,
+)
 from services.llm_output import parse_llm_json
 from services.patch_engine import apply_patches
+from services.profile_deduplicator import merge_overlapping_bullets
 from services.profile_layout_correlator import correlate_profile_to_layout
 from services.relevance_ranker import rank_profile
 from services.synthetic_profile_layout import (
@@ -41,7 +50,8 @@ professionally sharpened — not a rewrite.
 
 You will receive editable_blocks: a list of {block_id, text}, where text is
 that block's current wording ("" for blocks meant to be authored fresh — see
-skills/changes_summary below). Return one patch per block_id you were given —
+skills below, and changes_summary, which this pipeline no longer displays:
+always return "" for it). Return one patch per block_id you were given —
 never fewer, never more, and never a block_id you weren't given. candidate_profile
 is provided as read-only context for the whole profile (all skill categories,
 full work history) to inform your rewrites — you can only ever change
@@ -55,6 +65,15 @@ keyword woven in, rewrite the sentence itself; do not keep the original
 sentence and tack a new one onto it.
   Bad:  "Built APIs. Built RESTful APIs using ASP.NET Core and SQL Server."
   Good: "Built RESTful APIs using ASP.NET Core and SQL Server."
+
+In any bullet, summary, or project description, wrap the 1-3 most
+ATS-relevant technologies/tools/metrics in **double asterisks** (the
+renderer turns this into bold text) so they visually stand out — but only
+around real, specific terms (a technology name, a framework, a measurable
+outcome like "40% faster"), never around generic phrases or whole sentences.
+  Bad:  "**Built RESTful APIs using ASP.NET Core and SQL Server**"
+  Good: "Built RESTful APIs using **ASP.NET Core** and **SQL Server**"
+This doesn't apply to the skills block, which renders as a plain list.
 
 Editing philosophy: every edit must have a reason, but "the job posting
 barely overlaps with this bullet as written" is itself a reason — don't
@@ -104,6 +123,40 @@ never as a bolted-on keyword list.
 If no genuine support exists for a missing_keyword, leave the block alone —
 never fabricate the experience to claim it.
 
+Never force a keyword into a block whose real subject matter doesn't
+actually match it, even if the two sound topically adjacent. A keyword only
+belongs in a block if the underlying work it names is genuinely what that
+block is about — not just genuinely true of the candidate somewhere else.
+  Bad:  original "Optimized websites for SEO, hosting, and analytics
+         integration" (a WordPress freelance bullet) rewritten to "Optimized
+         scalable data pipelines..." — the candidate may have real data
+         pipeline experience, but not in this bullet's project.
+  Good: leave that bullet's subject matter (SEO/hosting/analytics) alone,
+        and place "data pipelines" in the block that's actually about that
+        work instead.
+This applies within a project too: only mention a technology in a project's
+description/tech-stack/achievement blocks if candidate_profile actually
+shows that project used it — never borrow a technology from a different
+project or from work_experience just because it's a missing_keyword.
+
+Some missing_keywords describe a general practice or soft skill rather than
+a specific tool (e.g. "problem solving", "full lifecycle development", "data
+science", "collaboration", "agile", "continuous integration"). These follow
+the exact same test as any other keyword — genuine truthful support, never
+fabrication — but the truthful basis is often the *shape* of real work
+already in candidate_profile, not a literal mention of the phrase:
+  - Any real project that built something or fixed an issue already
+    demonstrates "problem solving" — no project explicitly says that phrase.
+  - A project or job the candidate took from requirements through to
+    deployment/maintenance demonstrates "full lifecycle development" (or
+    "full lifecycle" / "end-to-end"), even worded differently in the bullet.
+  - A project or job that used data analysis, statistics, or ML libraries
+    (e.g. pandas, scikit-learn, XGBoost) demonstrates "data science", even if
+    "data science" itself is never the term the candidate used.
+Surface these the same way as any other keyword — reworded naturally into
+the relevant bullet or summary, never a bare label — and only when the
+candidate's real profile genuinely shows that shape of work.
+
 Section rules:
 - summary: rewrite freely to target the role, but keep it roughly the same
   length as its current text (about 4 lines) — this is the candidate's
@@ -116,42 +169,50 @@ Section rules:
   job. Every item must already exist in one of those sources; never add or
   drop a genuine skill. Write it compactly: a flat comma-separated list, with
   no per-category label prefixes ("Languages:", "Tools:", ...).
-- experience bullets: wording only. Keep each bullet within about 15% of its
-  original length — expand only as far as a genuinely supported keyword
-  requires. A resume that runs long loses an entire project or experience
-  entry to fit the 2-page budget (see resume_page_fitter.py), not just this
-  one bullet, so don't treat a single bullet's length as free to grow.
+- experience bullets: wording only, and concise — aim for about 1-2 lines
+  (roughly 110-220 characters), never noticeably longer than the bullet's
+  current length. You are enhancing existing content, not expanding it: if a
+  genuinely supported keyword needs weaving in, make room for it by cutting
+  a weaker word elsewhere in the same bullet rather than just adding length.
+  A resume that runs long loses an entire project or experience entry to fit
+  the 2-page budget (see resume_page_fitter.py), not just this one bullet.
 - projects: description, technologies, and each notable_achievements bullet
   may all be reworded/surfaced the same way as experience bullets — every
   project bullet is a real block_id you were given, not just the
   description. Lead with the outcome/impact of the project (what it did,
   what changed as a result), not just what it's built with; entry order is
   decided upstream, not by you.
-- changes_summary: write one line per block you actually changed — never a
-  line for a block you left alone, and never fewer lines than the number of
-  blocks you changed. Do not artificially limit yourself: if this job has
-  substantial gaps against missing_keywords/required_skills, thoroughly
-  applying the editing philosophy above across every block (including
-  summary, skills, and every bullet) should typically surface 10 or more
-  genuine changes, not 2-3 — a short list is a sign you stopped looking too
-  early, not a sign the resume was already perfect. Every line must cover
-  all three of:
-  (1) WHERE — the real section/entry, named the way the candidate would
-      recognize it (e.g. "your FluxPro internship bullet about JWT
-      authentication", "your Skills section", "the Kitchen Co-pilot project
-      description") — never a block_id.
-  (2) WHAT changed — the actual edit in plain language (reworded for
-      clarity, added a keyword, restructured for impact, or left unchanged
-      because it already covered the point) — not just "emphasized X".
-  (3) WHY it matters for this job — tie it to a specific requirement from
-      the job (a required/preferred skill, a responsibility, or a
-      matched/missing keyword) — not just "included matched keywords".
-  For any missing_keyword you could not address, say which requirement it
-  maps to and that the candidate's real experience doesn't support claiming
-  it.
-  Example line: "In your FluxPro internship bullet about JWT authentication,
-  I added 'RESTful API design' since the job lists API design as a required
-  skill and your work already did this — just wasn't named explicitly."
+Reasoning output — separate from editable_blocks, this is how you explain
+what you did instead of the resume itself:
+- highlights: one entry per *section* you touched (Summary, Skills,
+  Experience, Projects — not one per bullet), grouping everything you did
+  in that section into a single sentence. Never write a separate highlight
+  for every small edit — that reads as repetitive noise, not a report. Each
+  highlight's summary must say what changed AND why it matters for this
+  job in one sentence (a specific required/preferred skill, responsibility,
+  or matched/missing keyword — not just "included matched keywords").
+  Distinguish precisely what kind of change this was:
+    - reordering existing content needs no hedging: "Reordered technical
+      skills to prioritize Python, React, and AWS."
+    - surfacing something already true of the candidate is not the same as
+      adding something new — say "included" or "surfaced from your
+      profile", never "added", when the underlying fact already existed
+      somewhere in candidate_profile: "Included Apache Spark from your
+      GitHub projects since the job lists it as a required skill."
+    - a genuinely new phrase woven into wording (same fact, clearer words)
+      can say "highlighted" or "rewrote": "Highlighted JWT authentication
+      in your FluxPro bullet because secure auth is explicitly required."
+  impact: rate each highlight "high" (summary rewrite, skills reordering,
+  a bullet that now demonstrates a required skill it didn't before),
+  "medium" (a bullet reworded for clarity/impact without closing a
+  keyword gap), or "low" (a small wording/phrasing tweak).
+  If you left a section entirely unchanged because it already covered the
+  job well, do not write a highlight for it — silence means no change.
+- keywords_skipped: one entry per missing_keyword you deliberately did not
+  weave in, with a one-sentence reason tied to the actual gap ("Candidate
+  profile has no demonstrated Redis experience", not "not relevant").
+  Never include a missing_keyword here that you did in fact address
+  somewhere in editable_blocks.
 
 Never allowed:
 - Never invent skills, employers, titles, dates, or achievements not already in
@@ -161,11 +222,20 @@ Never allowed:
   real experience in the profile; otherwise leave the gap alone.
 - Never adopt a marketing or exaggerated tone — plain, technical, ATS-parseable
   language only.
+- Never move a technology or keyword into a block whose real subject
+  matter doesn't genuinely involve it, even when it's true of the candidate
+  elsewhere — see the ATS keyword test section above.
 
 Schema:
 {
   "patches": [
     {"block_id": string, "new_text": string}
+  ],
+  "highlights": [
+    {"section": string, "summary": string, "impact": "high" | "medium" | "low"}
+  ],
+  "keywords_skipped": [
+    {"keyword": string, "reason": string}
   ]
 }"""
 
@@ -179,13 +249,14 @@ class ResumeGenerationAgent:
         ranked = rank_profile(profile, keyword_report)
 
         layout = build_synthetic_layout(ranked.profile)
-        patches = await self._optimize(layout, ranked.profile, job, keyword_report)
+        patches, highlights, keywords_skipped = await self._optimize(layout, ranked.profile, job, keyword_report)
 
         patch_result = apply_patches(layout, patches)
         if patch_result.rejected_block_ids:
             logger.warning("Optimization LLM referenced unknown block_ids: %s", patch_result.rejected_block_ids)
 
         optimized_resume = flatten_layout_to_resume(ranked.profile, patch_result.document)
+        optimized_resume = merge_overlapping_bullets(optimized_resume)
         ats_score = compute_ats(keyword_report)
 
         added_keyword_candidates = find_added_keywords(keyword_report.missing, optimized_resume)
@@ -198,6 +269,11 @@ class ResumeGenerationAgent:
                 len(unbacked_keywords), unbacked_keywords,
             )
 
+        report = self._build_report(
+            ranked.profile, job, layout, patch_result.document, optimized_resume,
+            keyword_report, added_keywords, highlights, keywords_skipped,
+        )
+
         render_layout, layout_preserved = self._build_render_layout(ranked.profile, layout_document, patches)
 
         return {
@@ -209,7 +285,58 @@ class ResumeGenerationAgent:
             "patches": [patch.model_dump() for patch in patches],
             "render_layout": render_layout,
             "layout_preserved": layout_preserved,
+            "report": report.model_dump(),
         }
+
+    def _build_report(
+        self,
+        ranked_profile: dict,
+        job: dict,
+        layout: ResumeLayoutDocument,
+        patched_document: ResumeLayoutDocument,
+        optimized_resume: dict,
+        keyword_report: KeywordReport,
+        added_keywords: list[str],
+        highlights: list[ChangeHighlight],
+        keywords_skipped: list[KeywordSkipReason],
+    ) -> OptimizationReport:
+        """
+        Assembles OptimizationReport from this same generation run. Only
+        `highlights` and `keywords_skipped` are the LLM's own words (see
+        _SYSTEM_PROMPT's Reasoning output section) — every count/score below
+        is derived here from patches/keyword data, not asked of the model,
+        so it can't drift from what actually happened.
+        """
+        ats_score_before = compute_ats(keyword_report)
+        after_report = KeywordReport(
+            matched=[*keyword_report.matched, *added_keywords],
+            missing=[kw for kw in keyword_report.missing if kw not in added_keywords],
+        )
+        ats_score_after = compute_ats(after_report)
+
+        modified = _modified_block_ids(layout, patched_document)
+        project_indices_modified = {
+            int(match.group(1))
+            for block_id in modified
+            if (match := re.match(r"projects\[(\d+)\]", block_id))
+        }
+
+        return OptimizationReport(
+            ats_score_before=ats_score_before,
+            ats_score_after=ats_score_after,
+            matched_keywords_before=len(keyword_report.matched),
+            matched_keywords_after=len(after_report.matched),
+            keywords_added=added_keywords,
+            # Trust but verify: only credit a skip reason the model didn't
+            # contradict by also successfully weaving that keyword in.
+            keywords_skipped=[kw for kw in keywords_skipped if kw.keyword not in added_keywords],
+            unused_candidate_skills=unused_candidate_skills(ranked_profile, job),
+            skills_reordered=_skills_reordered(ranked_profile, optimized_resume.get("skills") or []),
+            summary_rewritten="summary" in modified,
+            experience_bullets_modified=sum(1 for block_id in modified if block_id.startswith("work_experience[")),
+            projects_modified=len(project_indices_modified),
+            highlights=highlights,
+        )
 
     def _build_render_layout(
         self, ranked_profile: dict, layout_document: dict | None, patches: list[ContentPatch]
@@ -285,7 +412,7 @@ class ResumeGenerationAgent:
 
     async def _optimize(
         self, layout: ResumeLayoutDocument, ranked_profile: dict, job: dict, keyword_report: KeywordReport
-    ) -> list[ContentPatch]:
+    ) -> tuple[list[ContentPatch], list[ChangeHighlight], list[KeywordSkipReason]]:
         editable_blocks = [
             {"block_id": block.block_id, "text": block.text}
             for section in layout.sections
@@ -308,7 +435,43 @@ class ResumeGenerationAgent:
             ),
         )
         result = parse_llm_json(response.text, OptimizationPatchResponse)
-        return [ContentPatch(**patch) for patch in result["patches"]]
+        patches = [ContentPatch(**patch) for patch in result["patches"]]
+        highlights = [ChangeHighlight(**h) for h in result.get("highlights") or []]
+        keywords_skipped = [KeywordSkipReason(**k) for k in result.get("keywords_skipped") or []]
+        return patches, highlights, keywords_skipped
+
+
+def _modified_block_ids(before: ResumeLayoutDocument, after: ResumeLayoutDocument) -> set[str]:
+    before_text = {block.block_id: block.text for section in before.sections for block in section.blocks}
+    after_text = {block.block_id: block.text for section in after.sections for block in section.blocks}
+    return {
+        block_id
+        for block_id, text in after_text.items()
+        if (before_text.get(block_id) or "").strip() != (text or "").strip()
+    }
+
+
+def _skills_reordered(ranked_profile: dict, optimized_skills: list[str]) -> bool:
+    """
+    True if the optimized skills list's relative order differs from the
+    order skills naturally appear across the profile's own fields — the
+    synthetic layout's skills block always starts blank (see
+    synthetic_profile_layout.py), so there's no single "original skills
+    text" to diff against; this compares against that natural baseline
+    order instead. Only the subset of skills present in both is compared,
+    so a genuinely dropped/renamed skill doesn't by itself count as
+    "reordered".
+    """
+    baseline = [
+        item.strip().lower()
+        for field in PROFILE_SKILL_FIELDS
+        for item in (ranked_profile.get(field) or [])
+        if item
+    ]
+    optimized = [item.strip().lower() for item in optimized_skills if item]
+    common_baseline = [item for item in baseline if item in optimized]
+    common_optimized = [item for item in optimized if item in baseline]
+    return common_baseline != common_optimized
 
 
 def _chunk_evenly(items: list[str], chunk_count: int) -> list[list[str]]:

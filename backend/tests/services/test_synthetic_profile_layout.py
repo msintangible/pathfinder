@@ -175,3 +175,31 @@ def test_flatten_null_headline_and_summary_stay_null_when_never_patched():
 
     assert resume["headline"] is None
     assert resume["summary"] is None
+
+
+# ---------------------------------------------------------------------------
+# links (see _normalize_links / _ensure_scheme)
+# ---------------------------------------------------------------------------
+
+def test_flatten_adds_https_scheme_to_a_bare_link():
+    """Regression test: a link stored without a scheme (e.g. as a resume
+    literally prints it, "linkedin.com/in/jane") renders as a real <a href>
+    verbatim — without a scheme that's not an absolute URL, so the link is
+    unclickable/dead in the PDF."""
+    profile = {"links": {"linkedin": "linkedin.com/in/jane", "github": "github.com/jane"}}
+    layout = build_synthetic_layout(profile)
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["links"]["linkedin"] == "https://linkedin.com/in/jane"
+    assert resume["links"]["github"] == "https://github.com/jane"
+
+
+def test_flatten_leaves_a_link_that_already_has_a_scheme_untouched():
+    profile = {"links": {"linkedin": "https://linkedin.com/in/jane", "portfolio": "http://jane.dev"}}
+    layout = build_synthetic_layout(profile)
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["links"]["linkedin"] == "https://linkedin.com/in/jane"
+    assert resume["links"]["portfolio"] == "http://jane.dev"
