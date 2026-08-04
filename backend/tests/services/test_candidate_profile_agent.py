@@ -414,6 +414,76 @@ def test_prompt_asks_for_specific_skill_categorization():
     assert "technical_skills is only for skills that genuinely don't fit" in _SYSTEM_PROMPT
 
 
+def test_prompt_defines_contact_info_source_precedence():
+    """Regression guard: without an explicit precedence rule, a candidate
+    with conflicting emails/phones across sources (e.g. a real CV email vs.
+    a portfolio site's generic contact-form address) has no defined winner —
+    a future prompt edit must not silently drop this guidance."""
+    assert "Resume/CV text" in _SYSTEM_PROMPT
+    assert "Portfolio site text" in _SYSTEM_PROMPT
+
+
+def test_prompt_instructs_thorough_phone_number_scanning():
+    """Regression guard: observed live that the model extracted a correct
+    email but returned phone: null from text that clearly contained a phone
+    number not under an explicit "Phone:" label — a future prompt edit must
+    not silently drop this instruction to actively scan for one."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "scan every source's full text for anything shaped like a phone number" in normalized_prompt
+
+
+def test_prompt_instructs_mining_matching_github_repos_for_project_detail():
+    """Regression guard: a project's README-backed GitHub repo often has more
+    real detail than the CV's own terse description — a future prompt edit
+    must not silently drop the instruction to mine it for extra genuine
+    notable_achievements instead of leaving that detail unused."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "mine that repo's README for 1-2 additional genuine" in normalized_prompt
+
+
+def test_prompt_instructs_splitting_dense_paragraphs_into_separate_bullets():
+    """Regression guard: without this, a project/job entry described in one
+    dense paragraph stays as a single bullet instead of the several discrete
+    facts it actually contains — a future prompt edit must not silently drop
+    this guidance."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "split them into separate bullets/notable_achievements" in normalized_prompt
+
+
+def test_prompt_rejects_generic_filler_even_when_copied_from_the_source_resume():
+    """Regression guard: observed live output still contained "passionate
+    about building robust systems" and "eager to...contribute skills to a
+    dynamic team" — generic filler the model let through because it was
+    already present in the candidate's own source CV text. A future prompt
+    edit must not drop the explicit instruction that copied-from-source is
+    not an exemption from the genericness test."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "even if a phrase like this already appears in the candidate's own source resume" in normalized_prompt
+    assert "eager to adapt to new technologies" in normalized_prompt
+
+
+def test_prompt_actively_looks_for_secondary_sections():
+    """Regression guard: certifications/awards/leadership/volunteer_work/
+    publications/interests/references had a schema entry but zero
+    extraction guidance, unlike skills/summary/projects — the model
+    defaulted to [] rather than actively looking for them. A future prompt
+    edit must not silently drop this guidance (these sections only render
+    on the resume when populated — see resume_renderer.CANONICAL_SECTION_ORDER
+    and templates/resume.html's per-section {% if %} guards, so there's no
+    rendering-side reason to leave them empty when the input supports one)."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "actively look for them rather than defaulting" in normalized_prompt
+
+
+def test_prompt_gives_a_concrete_before_after_summary_example():
+    """Regression guard: abstract instructions alone weren't enough to stop
+    generic summaries in practice — a concrete good/bad pair is a stronger,
+    harder-to-ignore signal for a temperature-0 lite model. A future prompt
+    edit must not silently drop the worked example."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "Michael is a final-year Computer Science student who enjoys" in normalized_prompt
+
+
 # ---------------------------------------------------------------------------
 # Invalid LLM output
 # ---------------------------------------------------------------------------

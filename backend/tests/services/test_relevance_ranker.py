@@ -101,6 +101,54 @@ def test_source_indices_empty_for_missing_sections():
     assert ranked.source_indices["github_repositories"] == []
 
 
+# ---------------------------------------------------------------------------
+# ranking_reasons
+# ---------------------------------------------------------------------------
+
+def test_ranking_reasons_lists_the_actual_matched_terms():
+    profile = {
+        "projects": [
+            {"name": "Low relevance", "technologies": ["COBOL"]},
+            {"name": "High relevance", "technologies": ["Azure", "Docker", "FastAPI"]},
+        ]
+    }
+    report = KeywordReport(matched=["Azure", "Docker", "FastAPI", "Python"], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    assert ranked.ranking_reasons["projects"][0] == ["Azure", "Docker", "FastAPI"]
+
+
+def test_ranking_reasons_empty_for_a_tie_broken_entry():
+    profile = {"projects": [{"name": "No overlap", "technologies": ["COBOL"]}]}
+    report = KeywordReport(matched=["Python"], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    assert ranked.ranking_reasons["projects"][0] == []
+
+
+def test_ranking_reasons_deduplicates_terms_across_fields():
+    profile = {
+        "projects": [
+            {"name": "A", "technologies": ["AWS"], "skills_demonstrated": ["aws", "Terraform"]},
+        ]
+    }
+    report = KeywordReport(matched=["AWS", "Terraform"], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    assert ranked.ranking_reasons["projects"][0] == ["AWS", "Terraform"]
+
+
+def test_ranking_reasons_empty_for_missing_sections():
+    ranked = rank_profile({}, KeywordReport(matched=[], missing=[]))
+
+    assert ranked.ranking_reasons["work_experience"] == []
+    assert ranked.ranking_reasons["projects"] == []
+    assert ranked.ranking_reasons["github_repositories"] == []
+
+
 def test_source_indices_stay_aligned_with_ranked_profile_entries():
     profile = {
         "projects": [

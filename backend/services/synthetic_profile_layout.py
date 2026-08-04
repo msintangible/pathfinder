@@ -107,7 +107,7 @@ def flatten_layout_to_resume(ranked_profile: dict, layout: ResumeLayoutDocument)
         "phone": ranked_profile.get("phone"),
         "headline": text_by_id["headline"] or None,
         "summary": text_by_id["summary"] or None,
-        "links": _normalize_links(ranked_profile.get("links") or {}),
+        "links": _normalize_links(ranked_profile),
         "skills": skills,
         "skill_groups": _build_skill_groups(ranked_profile, skills),
         "experience": experience,
@@ -194,13 +194,33 @@ def _normalize_skill(item: str) -> str:
     return item.strip().lower()
 
 
-def _normalize_links(links: dict) -> dict:
+def _normalize_links(profile: dict) -> dict:
+    """
+    Explicit URLs the user typed into the import form (linkedin_url/
+    github_url/portfolio_url — real UserProfile columns, see
+    schemas/profile.py's CandidateProfile) always win over the LLM's
+    freeform `links` extraction for the same key: the user deliberately
+    provided them, whereas `links` is a best-effort catch-all for whatever
+    the profile-analysis LLM happened to notice in source text. `links`
+    still fills in keys the form doesn't cover (e.g. a Stack Overflow
+    profile mentioned in the resume text).
+    """
     normalized: dict[str, str] = {}
-    for key, value in links.items():
+    for key, value in (profile.get("links") or {}).items():
         if not value:
             continue
         link_key = str(key).strip().lower().replace("_url", "")
         normalized[link_key] = _ensure_scheme(str(value).strip())
+
+    for link_key, field in (
+        ("linkedin", "linkedin_url"),
+        ("github", "github_url"),
+        ("portfolio", "portfolio_url"),
+    ):
+        explicit_value = profile.get(field)
+        if explicit_value:
+            normalized[link_key] = _ensure_scheme(str(explicit_value).strip())
+
     return normalized
 
 

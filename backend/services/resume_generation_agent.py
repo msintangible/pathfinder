@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -14,12 +15,15 @@ from services.ats_scorer import compute_ats
 from services.keyword_matcher import (
     PROFILE_SKILL_FIELDS,
     KeywordReport,
+    _keyword_appears_in,
     filter_backed_keywords,
     find_added_keywords,
     match_keywords,
     unused_candidate_skills,
 )
+from services.inferable_keywords import infer_available_keywords
 from services.llm_output import parse_llm_json
+from services.optimization_validator import validate_optimization_integrity
 from services.patch_engine import apply_patches
 from services.profile_deduplicator import merge_overlapping_bullets
 from services.profile_layout_correlator import correlate_profile_to_layout
@@ -75,16 +79,33 @@ outcome like "40% faster"), never around generic phrases or whole sentences.
   Good: "Built RESTful APIs using **ASP.NET Core** and **SQL Server**"
 This doesn't apply to the skills block, which renders as a plain list.
 
-Editing philosophy: every edit must have a reason, but "the job posting
-barely overlaps with this bullet as written" is itself a reason — don't
-default to leaving a block unchanged just because it's already coherent.
-Before touching each block, ask "does this already communicate the point in
-language *this specific job posting* would recognize, or is there a genuine,
-truthful angle from the candidate's real experience this block is currently
-missing?" Apply that question to every single editable block, not just the
-ones that obviously need it — summary and skills included. Only when the
-honest answer is "there's truly nothing more to add without stretching the
-truth" should a block come back unchanged.
+Editing philosophy — apply this exact two-step test to every editable
+block, not just the ones that obviously need it (summary and skills
+included):
+
+STEP 1: Does this job have a missing_keyword, required_skill, or
+preferred_skill that this block's real, described work could truthfully
+demonstrate (per the ATS keyword test below)?
+
+  IF NO applicable keyword exists for this block:
+    Leave the block's core content unchanged. Only fix objective
+    weaknesses (a weak verb, awkward phrasing, a genuinely stronger
+    quantification of the same fact) — this bullet should still read as
+    clearly "the same bullet," light polish only.
+
+  IF YES — one or more missing/required/preferred keywords genuinely
+  apply:
+    Rewrite the block enough that a reader placing the original and your
+    version side-by-side can immediately see WHERE the new emphasis is,
+    not just that a synonym changed. Lead with the angle this job cares
+    about. This is not a light polish — restructure the sentence around
+    the newly-surfaced concept if that reads more naturally, while
+    keeping every fact truthful and traceable to candidate_profile. A
+    rewrite that only swapped one or two words while a real keyword gap
+    existed has failed this test.
+
+Never invent to satisfy STEP 1's "yes" branch — if no genuine angle
+exists, the honest answer was actually "no"; treat it as such.
 
 When a bullet or project description honestly supports more than one angle,
 lead with whichever angle this specific job cares about most — don't default
@@ -107,9 +128,23 @@ Priority order — resolve conflicts between these in this order:
    or touch company/title/dates — the pipeline enforces this outside your
    reach, so focus entirely on wording.
 3. Maximise ATS keyword coverage — see the per-block test below.
-4. Preserve writing style. Don't rewrite a sentence that already works.
-5. Improve impact — stronger action verbs, technical specificity, measurable
-   outcomes — only where it doesn't change what actually happened.
+4. Preserve writing style ONLY when STEP 1 above found no applicable
+   keyword for this block. Once a genuine keyword gap exists, restructuring
+   the sentence (STEP 2) outranks preserving the original phrasing — don't
+   let "the original already reads fine" talk you out of a rewrite STEP 2
+   actually calls for.
+5. Improve impact — stronger action verbs, technical specificity, and
+   sharper quantification. Apply this whenever STEP 2 already applies to a
+   block, not just as an afterthought: if candidate_profile has a number,
+   scale, or concrete detail for this same fact that the current wording
+   understates or omits (team size, client count, before/after values,
+   which specific technique was used), use it. Never invent a number or
+   detail that isn't genuinely in candidate_profile.
+   Bad:  "Collaborated via Git, enabling the team to complete tasks faster."
+         (candidate_profile elsewhere states this was "20% faster" — that
+         real detail is sitting unused)
+   Good: "Collaborated via Git for version control and code review,
+         enabling the team to complete routine tasks 20% faster."
 
 ATS keyword test — apply this to every bullet/description block before
 rewriting it: "Can this block naturally demonstrate any currently
@@ -158,9 +193,16 @@ the relevant bullet or summary, never a bare label — and only when the
 candidate's real profile genuinely shows that shape of work.
 
 Section rules:
-- summary: rewrite freely to target the role, but keep it roughly the same
-  length as its current text (about 4 lines) — this is the candidate's
-  first impression, not a place to introduce a wall of text.
+- summary: retarget which achievements/interests are foregrounded to match
+  this job, but preserve the candidate's actual voice and narrative from
+  candidate_profile.summary — don't flatten a specific, personal summary
+  into generic filler ("passionate about", "results-driven", "team player",
+  "experienced X professional", "eager to contribute to a dynamic team").
+  If candidate_profile.summary is already specific and personal, retargeting
+  means changing which real achievement/interest leads, not rewriting it
+  into something generic. Keep it roughly the same length as its current
+  text (about 4 lines) — this is the candidate's first impression, not a
+  place to introduce a wall of text.
 - skills: write a single comma-separated list compiled from
   candidate_profile's technical_skills, programming_languages, frameworks,
   libraries, databases, cloud_platforms, devops_tools, ai_ml_tools,
@@ -170,18 +212,30 @@ Section rules:
   drop a genuine skill. Write it compactly: a flat comma-separated list, with
   no per-category label prefixes ("Languages:", "Tools:", ...).
 - experience bullets: wording only, and concise — aim for about 1-2 lines
-  (roughly 110-220 characters), never noticeably longer than the bullet's
-  current length. You are enhancing existing content, not expanding it: if a
-  genuinely supported keyword needs weaving in, make room for it by cutting
-  a weaker word elsewhere in the same bullet rather than just adding length.
-  A resume that runs long loses an entire project or experience entry to fit
-  the 2-page budget (see resume_page_fitter.py), not just this one bullet.
+  (roughly 110-220 characters). This is a length target, not a hard ceiling
+  on top of STEP 2's restructuring above: when a genuine keyword gap or an
+  unused quantified detail justifies a rewrite, a few extra words to fit it
+  in cleanly is fine — prefer cutting a weaker word elsewhere first, but
+  don't leave real, supportable detail out just to match the original's
+  exact length. A resume that runs long loses an entire project or
+  experience entry to fit the 2-page budget (see resume_page_fitter.py),
+  not just this one bullet — so this is still a real constraint, just not
+  one that should silently override STEP 2.
 - projects: description, technologies, and each notable_achievements bullet
   may all be reworded/surfaced the same way as experience bullets — every
   project bullet is a real block_id you were given, not just the
   description. Lead with the outcome/impact of the project (what it did,
   what changed as a result), not just what it's built with; entry order is
   decided upstream, not by you.
+  If two or more projects share similar high-level subject matter (e.g. two
+  projects that are both, at a glance, "a stock valuation tool"), don't let
+  their descriptions restate the same angle — you can see every project in
+  candidate_profile, so differentiate them by each project's actual
+  distinct technical approach or outcome (a different modeling technique, a
+  different interface, a different specific problem solved), using that
+  project's own real details. A reader skimming the Projects section should
+  be able to tell what's actually different about each one, not read the
+  same idea twice in different words.
 Reasoning output — separate from editable_blocks, this is how you explain
 what you did instead of the resume itself:
 - highlights: one entry per *section* you touched (Summary, Skills,
@@ -246,6 +300,7 @@ class ResumeGenerationAgent:
 
     async def generate(self, profile: dict, job: dict, layout_document: dict | None = None) -> dict:
         keyword_report = match_keywords(profile, job)
+        keyword_report = _augment_with_inferred_keywords(keyword_report, profile, job)
         ranked = rank_profile(profile, keyword_report)
 
         layout = build_synthetic_layout(ranked.profile)
@@ -272,7 +327,13 @@ class ResumeGenerationAgent:
         report = self._build_report(
             ranked.profile, job, layout, patch_result.document, optimized_resume,
             keyword_report, added_keywords, highlights, keywords_skipped,
+            ranked.ranking_reasons.get("projects") or [],
         )
+
+        for issue in validate_optimization_integrity(
+            profile, ranked.profile, optimized_resume, report.ats_score_before, report.ats_score_after,
+        ):
+            logger.warning("generate: optimization integrity issue — %s", issue)
 
         render_layout, layout_preserved = self._build_render_layout(ranked.profile, layout_document, patches)
 
@@ -299,6 +360,7 @@ class ResumeGenerationAgent:
         added_keywords: list[str],
         highlights: list[ChangeHighlight],
         keywords_skipped: list[KeywordSkipReason],
+        project_ranking_reasons: list[list[str]],
     ) -> OptimizationReport:
         """
         Assembles OptimizationReport from this same generation run. Only
@@ -320,6 +382,13 @@ class ResumeGenerationAgent:
             for block_id in modified
             if (match := re.match(r"projects\[(\d+)\]", block_id))
         }
+        rewrite_similarity_avg, rewrite_quality_issues = _rewrite_quality(
+            layout, patched_document, added_keywords,
+        )
+        project_ranking = [
+            {"name": project.get("name"), "matched_on": reasons}
+            for project, reasons in zip(ranked_profile.get("projects") or [], project_ranking_reasons)
+        ]
 
         return OptimizationReport(
             ats_score_before=ats_score_before,
@@ -336,6 +405,9 @@ class ResumeGenerationAgent:
             experience_bullets_modified=sum(1 for block_id in modified if block_id.startswith("work_experience[")),
             projects_modified=len(project_indices_modified),
             highlights=highlights,
+            rewrite_similarity_avg=rewrite_similarity_avg,
+            rewrite_quality_issues=rewrite_quality_issues,
+            project_ranking=project_ranking,
         )
 
     def _build_render_layout(
@@ -441,6 +513,45 @@ class ResumeGenerationAgent:
         return patches, highlights, keywords_skipped
 
 
+def _augment_with_inferred_keywords(keyword_report: KeywordReport, profile: dict, job: dict) -> KeywordReport:
+    """
+    Offers inferable process/methodology/soft-skill keywords (see
+    inferable_keywords.py) as additional missing_keyword candidates,
+    whenever the job cares about one (its label overlaps a job
+    skill/technology/keyword/responsibility/qualification term) and the
+    candidate's own text already evidences it. Closes the structural gap
+    where match_keywords only ever compares literal technology tags —
+    these still go through the optimization LLM's normal truthful-support
+    test (see _SYSTEM_PROMPT's ATS keyword test) before being woven in;
+    this function only ever adds to `missing`, never to `matched`, since
+    nothing has actually been credited on the resume yet.
+    """
+    job_terms_lower = {
+        term.strip().lower()
+        for field in ("skills", "technologies", "keywords", "responsibilities", "qualifications")
+        for term in (job.get(field) or [])
+        if term
+    }
+    if not job_terms_lower:
+        return keyword_report
+
+    already_known_lower = {term.strip().lower() for term in (*keyword_report.matched, *keyword_report.missing)}
+    inferred = [
+        keyword for keyword in infer_available_keywords(profile)
+        if keyword.lower() not in already_known_lower and _job_cares_about(keyword, job_terms_lower)
+    ]
+    if not inferred:
+        return keyword_report
+    return KeywordReport(matched=keyword_report.matched, missing=[*keyword_report.missing, *inferred])
+
+
+def _job_cares_about(keyword: str, job_terms_lower: set[str]) -> bool:
+    # Substring match in either direction: handles the job stating a short
+    # form ("Agile", "SDLC") against a longer taxonomy label, and vice versa.
+    keyword_lower = keyword.lower()
+    return any(term in keyword_lower or keyword_lower in term for term in job_terms_lower)
+
+
 def _modified_block_ids(before: ResumeLayoutDocument, after: ResumeLayoutDocument) -> set[str]:
     before_text = {block.block_id: block.text for section in before.sections for block in section.blocks}
     after_text = {block.block_id: block.text for section in after.sections for block in section.blocks}
@@ -449,6 +560,57 @@ def _modified_block_ids(before: ResumeLayoutDocument, after: ResumeLayoutDocumen
         for block_id, text in after_text.items()
         if (before_text.get(block_id) or "").strip() != (text or "").strip()
     }
+
+
+# A block whose text stayed >= this similar to its original wording despite
+# claiming to now carry a newly-added keyword is a strong signal the keyword
+# was stitched onto the end rather than woven into a genuine rewrite — see
+# the STEP 1/STEP 2 editing philosophy in _SYSTEM_PROMPT. Only flagged
+# (logged), never blocking — a real diff-based signal is still coarser than
+# the LLM's own judgment, so this surfaces the suspicion, it doesn't decide.
+_STITCHED_KEYWORD_SIMILARITY_THRESHOLD = 0.92
+
+
+def _rewrite_similarity(before: str, after: str) -> float:
+    return SequenceMatcher(None, before.strip().lower(), after.strip().lower()).ratio()
+
+
+def _rewrite_quality(
+    before: ResumeLayoutDocument, after: ResumeLayoutDocument, added_keywords: list[str]
+) -> tuple[float | None, list[str]]:
+    """
+    Measures how much each *changed* block's wording actually moved, and
+    flags a specific failure shape: a block that claims to now carry an
+    added keyword (find_added_keywords found the keyword's text inside it)
+    but is implausibly similar to its original wording. Returns (mean
+    similarity across changed blocks, or None if nothing changed; the list
+    of flagged block_ids with a reason).
+    """
+    before_text = {block.block_id: block.text for section in before.sections for block in section.blocks}
+    after_text = {block.block_id: block.text for section in after.sections for block in section.blocks}
+
+    similarities: list[float] = []
+    issues: list[str] = []
+    for block_id, new_text in after_text.items():
+        old_text = before_text.get(block_id) or ""
+        if not old_text.strip() or not (new_text or "").strip():
+            continue
+        if old_text.strip() == new_text.strip():
+            continue  # unchanged blocks don't count toward "rewrite" magnitude
+        similarity = _rewrite_similarity(old_text, new_text)
+        similarities.append(similarity)
+
+        carries_added_keyword = any(
+            _keyword_appears_in(kw, new_text.lower()) for kw in added_keywords
+        )
+        if carries_added_keyword and similarity >= _STITCHED_KEYWORD_SIMILARITY_THRESHOLD:
+            issues.append(
+                f"{block_id}: claims a newly-added keyword but is {similarity:.0%} similar "
+                f"to its original wording — likely stitched on rather than woven in"
+            )
+
+    avg = round(sum(similarities) / len(similarities), 4) if similarities else None
+    return avg, issues
 
 
 def _skills_reordered(ranked_profile: dict, optimized_skills: list[str]) -> bool:

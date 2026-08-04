@@ -24,6 +24,13 @@ class RankedProfile:
     # profile["projects"][0] after ranking/truncation. Lets callers map an
     # optimized entry back to the document block it came from.
     source_indices: dict[str, list[int]]
+    # Why each ranked entry outranked the ones behind it: the actual matched
+    # keyword terms found in that entry's technologies/skills_demonstrated
+    # (etc.) fields, in the same order/positions as `profile`'s ranked
+    # entries. An entry with an empty list ranked on tie-break (stable sort
+    # preserving original order), not on any real overlap — surfaced so
+    # "why this project and not that one" has a real answer instead of none.
+    ranking_reasons: dict[str, list[list[str]]]
 
 
 def _relevance(entry: dict, matched_lower: set[str], *fields: str) -> int:
@@ -36,32 +43,52 @@ def _relevance(entry: dict, matched_lower: set[str], *fields: str) -> int:
     return len(terms & matched_lower)
 
 
+def _matched_terms(entry: dict, matched_lower: set[str], *fields: str) -> list[str]:
+    """The entry's own tag terms (original casing) that overlap
+    matched_lower — the human-readable reason this entry ranked where it
+    did. Order-preserving, deduplicated case-insensitively."""
+    seen_lower: set[str] = set()
+    result: list[str] = []
+    for field in fields:
+        for term in (entry.get(field) or []):
+            if not term:
+                continue
+            term_lower = term.strip().lower()
+            if term_lower in matched_lower and term_lower not in seen_lower:
+                seen_lower.add(term_lower)
+                result.append(term.strip())
+    return result
+
+
 def _sort_section(
     entries: list[dict] | None, matched_lower: set[str], cap: int, *fields: str
-) -> tuple[list[dict], list[int]]:
+) -> tuple[list[dict], list[int], list[list[str]]]:
     if not entries:
-        return [], []
+        return [], [], []
     indexed = sorted(
         enumerate(entries),
         key=lambda item: _relevance(item[1], matched_lower, *fields),
         reverse=True,
     )[:cap]
-    return [entry for _, entry in indexed], [index for index, _ in indexed]
+    ranked_entries = [entry for _, entry in indexed]
+    ranked_indices = [index for index, _ in indexed]
+    reasons = [_matched_terms(entry, matched_lower, *fields) for entry in ranked_entries]
+    return ranked_entries, ranked_indices, reasons
 
 
 def rank_profile(profile: dict, keyword_report: KeywordReport) -> RankedProfile:
     """Reorder and trim profile sections so entries relevant to the job's matched keywords come first."""
     matched_lower = {term.lower() for term in keyword_report.matched}
 
-    work_experience, work_experience_indices = _sort_section(
+    work_experience, work_experience_indices, work_experience_reasons = _sort_section(
         profile.get("work_experience"), matched_lower, _MAX_WORK_EXPERIENCE,
         "technologies", "skills_demonstrated",
     )
-    projects, project_indices = _sort_section(
+    projects, project_indices, project_reasons = _sort_section(
         profile.get("projects"), matched_lower, _MAX_PROJECTS,
         "technologies", "skills_demonstrated",
     )
-    github_repositories, github_repository_indices = _sort_section(
+    github_repositories, github_repository_indices, github_repository_reasons = _sort_section(
         profile.get("github_repositories"), matched_lower, _MAX_GITHUB_REPOS,
         "technologies", "languages", "frameworks", "skills_demonstrated",
     )
@@ -77,5 +104,10 @@ def rank_profile(profile: dict, keyword_report: KeywordReport) -> RankedProfile:
             "work_experience": work_experience_indices,
             "projects": project_indices,
             "github_repositories": github_repository_indices,
+        },
+        ranking_reasons={
+            "work_experience": work_experience_reasons,
+            "projects": project_reasons,
+            "github_repositories": github_repository_reasons,
         },
     )

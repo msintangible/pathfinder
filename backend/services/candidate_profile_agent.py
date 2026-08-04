@@ -18,6 +18,33 @@ Rules:
 - Don't invent skills, experience, or qualifications not in the input.
 - Don't infer employment history not explicitly stated.
 - Merge the same info from multiple sources into one entry, not duplicates.
+- When sources disagree on a single-valued fact (email, phone, name), prefer
+  sources in this order and use the first one that has a value:
+    1. Resume/CV text — the candidate deliberately wrote/uploaded this.
+    2. LinkedIn text.
+    3. GitHub profile bio.
+    4. Portfolio site text — often contains a generic "contact us" address
+       or a webmaster/form-relay email that is NOT the candidate's own; only
+       use a portfolio-sourced email/phone if no higher-priority source has
+       one.
+- Phone numbers appear in many formats (+1 555 123 4567, (555) 123-4567,
+  555.123.4567, an international format with a country code, etc.) and
+  aren't always on their own labeled line — scan every source's full text
+  for anything shaped like a phone number, the same care you'd give to
+  finding an email address, before concluding "phone": null. Don't require
+  an explicit "Phone:" label to find one.
+- For each project, if one of the input's github_repositories is clearly
+  the same project (matching or near-matching name, or the project's
+  description references the same subject matter as a repo's description/
+  README), mine that repo's README for 1-2 additional genuine
+  notable_achievements not already captured in the project's own
+  description — a specific technical approach, a concrete outcome, a
+  detail about how it works. Only pull details that are actually stated in
+  the README; never pad with a rephrasing of something already captured.
+- If a project or work_experience entry's source text describes multiple
+  distinct facts or outcomes run together in one dense paragraph, split
+  them into separate bullets/notable_achievements — one fact per entry —
+  rather than leaving them merged into a single block of text.
 - Classify every skill into the most specific matching category below (e.g.
   a programming language always goes in programming_languages, never
   technical_skills, even if it's also mentioned generically elsewhere).
@@ -25,6 +52,59 @@ Rules:
   more specific categories — it's a last resort, not a default.
 - Unknown values: null.
 - Unknown arrays: [].
+- For "summary": write 3-5 sentences that read like a short, specific
+  narrative about this individual, in third person using their actual first
+  name — not a generic label. Ground it in what the input sources actually
+  show: what kinds of problems they've chosen to work on, what they seem
+  motivated by (inferred from project choices, descriptions, and any
+  personal framing already present in the sources — e.g. a hackathon-winning
+  project suggests genuine interest, not just a class requirement), and 1-2
+  concrete, specific achievements.
+  Reject and rewrite any sentence built from generic resume-filler phrasing
+  — "passionate about building [X] systems", "results-driven", "team
+  player", "eager to adapt to new technologies", "contribute skills to a
+  dynamic team", "extensive experience across the [X] lifecycle" — even if
+  a phrase like this already appears in the candidate's own source resume
+  text. The test is not "did I copy this from somewhere" but "could this
+  exact sentence describe thousands of other candidates unchanged" — if so,
+  it must be rewritten to be specific to this one, using the same real
+  facts the generic version was gesturing at.
+  Example — same underlying facts (CS student, full-stack intern, backend
+  focus, several self-driven projects), rewritten from generic to specific:
+    Bad:  "Final-year Computer Science student passionate about building
+           robust systems. Extensive Full-Stack Developer experience across
+           the software development lifecycle, with a focus on backend
+           systems and infrastructure. Eager to adapt to new technologies
+           and contribute skills to a dynamic team."
+    Good: "Michael is a final-year Computer Science student who enjoys
+           building software that solves practical problems — from an
+           AI-powered meeting-notes tool that won Best Use of ElevenLabs at
+           HackBelfast to a stock valuation model combining machine
+           learning with real market data. His FluxPro internship deepened
+           this into backend engineering and cloud infrastructure, and he's
+           motivated by making systems that are both technically solid and
+           genuinely useful."
+  Every claim about motivation or interest must trace to something concrete
+  in the input — never invent an interest or personality trait with no
+  textual anchor. If the input is too sparse to support a personalized
+  narrative (e.g. only a bare skills list, no project descriptions), fall
+  back to a competent, specific-to-their-skills-and-experience summary
+  rather than inventing
+  color.
+- certifications, awards, achievements, leadership_experience,
+  volunteer_work, publications, interests, and references each render as
+  their own resume section whenever populated, and are omitted entirely
+  when empty — there's no downside to filling one in when the input
+  genuinely supports it, so actively look for them rather than defaulting
+  to []: a "Certified..." or "Certificate in..." mention is a
+  certification even outside a dedicated certifications list; a hackathon
+  placement, a "Dean's List" mention, or a competition result is an award;
+  mentoring, leading a team/project, or organizing an event is leadership
+  experience; an "Interests" or "Outside of work" section on LinkedIn or a
+  portfolio is interests; anything reading like a formal reference contact
+  or "References available on request" belongs in references. Only extract
+  what's actually stated — never invent a certification, award, or
+  reference that isn't genuinely in the input.
 
 Schema:
 {

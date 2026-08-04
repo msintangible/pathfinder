@@ -193,13 +193,18 @@ async def restore_profile(
     user: User = Depends(get_current_user),
 ) -> ProfileRestoreResponse:
     # No LLM call — the client is handing back data we already analyzed once.
-    # linkedin_url/github_url/portfolio_url and any docx source_document_path
-    # aren't part of CandidateProfile, so they come back null; only the
-    # analyzed fields are recoverable this way.
+    # linkedin_url/github_url/portfolio_url round-trip via CandidateProfile
+    # itself (see schemas/profile.py); any docx/pdf source_document_path and
+    # layout_document are NOT part of CandidateProfile, so those stay null —
+    # a restored profile falls back to the generic template renderer rather
+    # than in-place document editing, same as a LinkedIn/GitHub-only import.
     repo = ProfileRepository(session)
     profile = await repo.create_from_analysis(
         body.profile.model_dump(mode="json"),
         user_id=user.id,
+        linkedin_url=body.profile.linkedin_url,
+        github_url=body.profile.github_url,
+        portfolio_url=body.profile.portfolio_url,
     )
     return ProfileRestoreResponse(
         id=profile.id,

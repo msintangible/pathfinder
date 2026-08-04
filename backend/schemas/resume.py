@@ -108,6 +108,15 @@ class KeywordSkipReason(BaseModel):
     reason: str
 
 
+class ProjectRankingEntry(BaseModel):
+    """Why a project ranked where it did in the resume's Projects section —
+    see relevance_ranker.rank_profile's ranking_reasons. matched_on is empty
+    when the project ranked purely on tie-break (no real keyword overlap),
+    not on genuine relevance."""
+    name: str | None = None
+    matched_on: list[str] = []
+
+
 class OptimizationReport(BaseModel):
     """
     Everything about *how* the resume was optimized, as opposed to
@@ -129,6 +138,19 @@ class OptimizationReport(BaseModel):
     experience_bullets_modified: int = 0
     projects_modified: int = 0
     highlights: list[ChangeHighlight] = []
+    # Mean difflib.SequenceMatcher ratio across blocks the LLM actually
+    # changed (None if nothing changed) — a rough, code-level signal for
+    # "how much did wording actually move," independent of the model's own
+    # highlights. See resume_generation_agent._rewrite_quality.
+    rewrite_similarity_avg: float | None = None
+    # block_ids flagged as claiming a newly-added keyword while staying
+    # implausibly similar to their original wording — a likely
+    # stitched-on-rather-than-woven-in rewrite. Informational, not blocking.
+    rewrite_quality_issues: list[str] = []
+    # Why each surviving project ranked where it did (see
+    # relevance_ranker.rank_profile) — surfaced so "why this project and
+    # not that one" has a real, visible answer.
+    project_ranking: list[ProjectRankingEntry] = []
 
 
 class OptimizationPatchResponse(BaseModel):

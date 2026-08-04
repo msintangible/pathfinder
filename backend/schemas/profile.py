@@ -117,6 +117,19 @@ class CandidateProfile(BaseModel):
     headline: str | None = None
     summary: str | None = None
 
+    # Explicit, user-provided source URLs (typed into the import form) —
+    # distinct from `links` below, which is whatever the LLM freeform-
+    # extracted from source text. UserProfile stores these as real columns
+    # (see models/profile.py); mirroring them here as named fields is what
+    # lets CandidateProfile.model_validate(profile, from_attributes=True) —
+    # api/v1/resume.py::_profile_to_dict's read path — actually pick them up
+    # instead of silently dropping them. See
+    # synthetic_profile_layout._normalize_links for the precedence rule
+    # against `links` when both are present.
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    portfolio_url: str | None = None
+
     # Skills — broken out so downstream agents can do precise keyword matching
     technical_skills: list[str] = []
     soft_skills: list[str] = []

@@ -32,7 +32,22 @@ _SYSTEM_PROMPT = """Extract this job posting into JSON.
 
 Unknown values: null.
 Unknown arrays: [].
-Do not infer missing information.
+Do not infer missing information not present in the posting.
+
+skills/technologies/keywords: pull out every concrete, atomic requirement
+as its own short entry — not just named tools and languages, but also
+methodologies ("Agile", "CI/CD"), certifications ("Azure Fundamentals"),
+and explicitly named soft skills ("Stakeholder Communication",
+"Leadership") whenever the posting states them as a requirement or
+preference. Keyword-matching against a candidate's profile only ever looks
+at these three fields plus responsibilities/qualifications, so a
+requirement mentioned only in a long sentence and never pulled out as its
+own short entry here cannot be matched later.
+
+responsibilities/qualifications: still capture the full sentence-level
+context for these same items (e.g. "5+ years of Agile development
+experience") — they are complementary to skills/technologies/keywords, not
+alternatives to them.
 
 Schema:
 {

@@ -203,3 +203,53 @@ def test_flatten_leaves_a_link_that_already_has_a_scheme_untouched():
 
     assert resume["links"]["linkedin"] == "https://linkedin.com/in/jane"
     assert resume["links"]["portfolio"] == "http://jane.dev"
+
+
+def test_flatten_uses_explicit_source_urls_when_no_freeform_links_extracted():
+    """Regression test: linkedin_url/github_url/portfolio_url are real,
+    user-provided UserProfile columns (see schemas/profile.py's
+    CandidateProfile) — they must reach the rendered resume even when the
+    profile-analysis LLM never independently re-extracted the same URL into
+    the freeform `links` dict."""
+    profile = {
+        "linkedin_url": "https://linkedin.com/in/jane",
+        "github_url": "https://github.com/jane",
+        "portfolio_url": "https://jane.dev",
+    }
+    layout = build_synthetic_layout(profile)
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["links"]["linkedin"] == "https://linkedin.com/in/jane"
+    assert resume["links"]["github"] == "https://github.com/jane"
+    assert resume["links"]["portfolio"] == "https://jane.dev"
+
+
+def test_flatten_prefers_explicit_source_url_over_freeform_link_for_the_same_key():
+    """The user deliberately typed linkedin_url into the import form — that
+    must win over whatever the LLM happened to freeform-extract into `links`
+    for the same key (e.g. a stale or differently-cased URL from resume text)."""
+    profile = {
+        "links": {"linkedin": "linkedin.com/in/jane-old-handle"},
+        "linkedin_url": "https://linkedin.com/in/jane-current",
+    }
+    layout = build_synthetic_layout(profile)
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["links"]["linkedin"] == "https://linkedin.com/in/jane-current"
+
+
+def test_flatten_keeps_freeform_link_for_a_key_with_no_explicit_source_url():
+    """A freeform-extracted link (e.g. a Stack Overflow profile mentioned in
+    resume text) has no explicit form field — it must still come through."""
+    profile = {
+        "links": {"stackoverflow": "stackoverflow.com/users/12345"},
+        "linkedin_url": "https://linkedin.com/in/jane",
+    }
+    layout = build_synthetic_layout(profile)
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["links"]["stackoverflow"] == "https://stackoverflow.com/users/12345"
+    assert resume["links"]["linkedin"] == "https://linkedin.com/in/jane"

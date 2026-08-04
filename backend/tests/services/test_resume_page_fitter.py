@@ -42,7 +42,37 @@ def test_short_resume_fits_without_any_trimming():
     assert rendered_resume == resume
 
 
-def test_trims_projects_before_experience_when_over_page_limit():
+def test_removes_the_shortest_bullet_from_the_least_relevant_entry_first():
+    """Graduated trim, step 1: an entry with a spare bullet loses only its
+    shortest bullet — not the whole entry — before anything else is
+    touched. Both projects still survive, unlike the old whole-entry-drop
+    behavior."""
+    resume = {
+        "name": "Jane Doe",
+        "experience": [],
+        "projects": [
+            {"name": "Project 0", "bullets": ["A reasonably long and detailed bullet point here."]},
+            {"name": "Project 1", "bullets": ["Short one.", "A much longer bullet point with more detail in it."]},
+        ],
+    }
+
+    with patch("services.resume_page_fitter.render_pdf", return_value=b"final-pdf") as mock_render_pdf, \
+         patch("services.resume_page_fitter.count_pdf_pages", side_effect=[3, 2]) as mock_count_pages:
+        pdf_bytes, rendered_resume = render_within_page_limit(resume)
+
+    assert pdf_bytes == b"final-pdf"
+    # Project 1 (least relevant — last in the list) loses its shortest
+    # bullet ("Short one."); Project 0 and Project 1's longer bullet survive.
+    assert len(rendered_resume["projects"]) == 2
+    assert rendered_resume["projects"][1]["bullets"] == ["A much longer bullet point with more detail in it."]
+    assert mock_render_pdf.call_count == 2
+    assert mock_count_pages.call_count == 2
+
+
+def test_drops_a_whole_entry_only_once_no_entry_has_a_spare_bullet():
+    """Entries with no bullets field at all (or only one bullet each) have
+    nothing left for step 1 to trim — falls back to the old whole-entry
+    drop, projects before experience, same section priority as before."""
     resume = {
         "name": "Jane Doe",
         "experience": [{"title": f"Job {i}"} for i in range(3)],

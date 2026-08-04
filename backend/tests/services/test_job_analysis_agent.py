@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.job_analysis_agent import JobAnalysisAgent
+from services.job_analysis_agent import _SYSTEM_PROMPT, JobAnalysisAgent
 from services.llm_output import LLMOutputError
 
 
@@ -226,6 +226,22 @@ async def test_uses_zero_temperature_for_determinism(mock_genai):
 
     config = mock_genai.aio.models.generate_content.call_args.kwargs["config"]
     assert config.temperature == 0
+
+
+# ---------------------------------------------------------------------------
+# Prompt content
+# ---------------------------------------------------------------------------
+
+def test_prompt_asks_for_atomic_requirement_extraction():
+    """Regression guard: keyword_matcher only ever compares against
+    skills/technologies/keywords (see keyword_matcher._JOB_KEYWORD_FIELDS) —
+    a requirement (methodology, certification, named soft skill) mentioned
+    only inside a long qualifications/responsibilities sentence and never
+    pulled out as its own short entry here can never be matched later. A
+    future prompt edit must not silently drop this guidance."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "methodologies" in normalized_prompt
+    assert "certifications" in normalized_prompt
 
 
 # ---------------------------------------------------------------------------

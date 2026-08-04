@@ -38,6 +38,7 @@ class UserProfile(Base, PrimaryKeyMixin):
     # --- Identity ---
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- Ingestion sources ---
     # The originally uploaded CV file, stored so resume generation can edit it

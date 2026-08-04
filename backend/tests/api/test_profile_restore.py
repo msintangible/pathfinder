@@ -59,6 +59,41 @@ def test_restore_persists_the_cached_profile_without_calling_the_agent(client):
         assert body["profile"]["name"] == "Jane Doe"
 
 
+def test_restore_passes_through_cached_source_urls():
+    """linkedin_url/github_url/portfolio_url now round-trip through
+    CandidateProfile (see schemas/profile.py) — restore must forward them to
+    create_from_analysis as explicit kwargs, not just leave them in the
+    dumped analysis dict where the repository would ignore them."""
+    app = FastAPI()
+    app.include_router(router, prefix="/v1")
+    app.dependency_overrides[get_db] = lambda: None
+    app.dependency_overrides[get_current_user] = lambda: User(id=_TEST_USER_ID)
+    client = TestClient(app)
+
+    with patch("api.v1.profile.CandidateProfileAgent") as mock_agent_cls, \
+         patch("api.v1.profile.ProfileRepository") as mock_repo_cls:
+        mock_repo_cls.return_value.create_from_analysis = AsyncMock(
+            return_value=UserProfile(id=uuid.uuid4(), name="Jane Doe")
+        )
+
+        resp = client.post(
+            "/v1/profile/restore",
+            json={"profile": {
+                "name": "Jane Doe",
+                "linkedin_url": "https://linkedin.com/in/jane",
+                "github_url": "https://github.com/jane",
+                "portfolio_url": "https://jane.dev",
+            }},
+        )
+
+        assert resp.status_code == 200
+        mock_agent_cls.return_value.analyze.assert_not_called()
+        call_kwargs = mock_repo_cls.return_value.create_from_analysis.call_args.kwargs
+        assert call_kwargs["linkedin_url"] == "https://linkedin.com/in/jane"
+        assert call_kwargs["github_url"] == "https://github.com/jane"
+        assert call_kwargs["portfolio_url"] == "https://jane.dev"
+
+
 def test_restore_requires_authentication():
     app = FastAPI()
     app.include_router(router, prefix="/v1")

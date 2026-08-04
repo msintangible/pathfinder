@@ -9,10 +9,22 @@ still carries duplicate entries the upstream dedup/ranking should have
 caught (see services/profile_deduplicator.py, services/relevance_ranker.py).
 """
 
+from difflib import SequenceMatcher
+
 # Matches relevance_ranker._MAX_PROJECTS — kept as a separate constant here
 # since this module checks the *rendered* resume's shape, independent of how
 # that shape was produced.
 _MAX_PROJECTS_IN_RESUME = 3
+
+# Two differently-named projects whose descriptions read this similarly are
+# worth a human glance — likely the same high-level pitch restated rather
+# than genuinely distinct projects (see resume_generation_agent.py's
+# project-differentiation prompt rule). Lower than
+# profile_deduplicator._ENTRY_MATCH_THRESHOLD (0.85) on purpose: this is a
+# looser "sounds like the same idea" signal, not "probably a literal
+# duplicate" — false positives here just mean an unnecessary glance, not a
+# wrongly-merged entry (this check never merges anything).
+_SIMILAR_PROJECT_THEME_THRESHOLD = 0.6
 
 
 def validate_resume_structure(resume: dict) -> list[str]:
@@ -42,6 +54,7 @@ def validate_resume_structure(resume: dict) -> list[str]:
 
     issues.extend(_duplicate_experience_issues(resume.get("experience") or []))
     issues.extend(_duplicate_project_issues(resume.get("projects") or []))
+    issues.extend(_similar_project_theme_issues(resume.get("projects") or []))
 
     return issues
 
@@ -69,6 +82,31 @@ def _duplicate_project_issues(projects: list[dict]) -> list[str]:
         if key in seen:
             issues.append(f"duplicate project entry: {project.get('name')}")
         seen.add(key)
+    return issues
+
+
+def _similar_project_theme_issues(projects: list[dict]) -> list[str]:
+    """Two differently-named projects (see _duplicate_project_issues for the
+    same-name case) whose descriptions read as the same high-level pitch —
+    a signal the optimization LLM didn't differentiate them (see
+    resume_generation_agent.py's project-differentiation prompt rule), not
+    proof they're actually duplicates; never merges or drops anything."""
+    issues: list[str] = []
+    descriptions = [
+        (project.get("name"), _normalize(project.get("description")))
+        for project in projects
+        if project.get("description")
+    ]
+    for i, (name_a, desc_a) in enumerate(descriptions):
+        for name_b, desc_b in descriptions[i + 1:]:
+            if _normalize(name_a) == _normalize(name_b):
+                continue  # already covered by _duplicate_project_issues
+            similarity = SequenceMatcher(None, desc_a, desc_b).ratio()
+            if similarity >= _SIMILAR_PROJECT_THEME_THRESHOLD:
+                issues.append(
+                    f"projects '{name_a}' and '{name_b}' have similarly-worded descriptions "
+                    f"({similarity:.0%} similar) — may read as restating the same idea twice"
+                )
     return issues
 
 

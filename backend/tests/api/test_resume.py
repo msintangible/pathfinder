@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.v1.resume import router
+from api.v1.resume import _profile_to_dict, router
 from core.security import get_current_user, get_current_user_allow_query_token
 from database.session import get_db
 from models.job import Job
@@ -41,6 +41,9 @@ _REPORT = {
     "experience_bullets_modified": 0,
     "projects_modified": 0,
     "highlights": [],
+    "rewrite_similarity_avg": None,
+    "rewrite_quality_issues": [],
+    "project_ranking": [],
 }
 
 _GENERATION_RESULT = {
@@ -71,6 +74,33 @@ def client():
     app.dependency_overrides[get_current_user] = lambda: User(id=_OWNER_ID)
     app.dependency_overrides[get_current_user_allow_query_token] = lambda: User(id=_OWNER_ID)
     return TestClient(app)
+
+
+def test_profile_to_dict_surfaces_phone_and_explicit_source_urls():
+    """Regression test for two confirmed bugs: (1) UserProfile.phone had no
+    column at all, so it was silently discarded before ever reaching
+    generation; (2) linkedin_url/github_url/portfolio_url are real UserProfile
+    columns that CandidateProfile never had matching fields for, so
+    model_validate(..., from_attributes=True) silently dropped them. Both are
+    now real CandidateProfile fields (see schemas/profile.py) — this asserts
+    the read boundary actually surfaces them instead of defaulting to null."""
+    profile = UserProfile(
+        id=uuid.uuid4(),
+        user_id=_OWNER_ID,
+        name="Michael Salami",
+        email="michael@gmail.com",
+        phone="+353 89 275 9721",
+        linkedin_url="https://linkedin.com/in/michael-salami",
+        github_url="https://github.com/msintangible",
+        portfolio_url="https://michael.dev",
+    )
+
+    result = _profile_to_dict(profile)
+
+    assert result["phone"] == "+353 89 275 9721"
+    assert result["linkedin_url"] == "https://linkedin.com/in/michael-salami"
+    assert result["github_url"] == "https://github.com/msintangible"
+    assert result["portfolio_url"] == "https://michael.dev"
 
 
 def test_generate_requires_authentication():

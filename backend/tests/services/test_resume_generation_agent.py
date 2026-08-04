@@ -130,6 +130,7 @@ async def test_returns_full_pipeline_output_shape(mock_genai):
         "ats_score_before", "ats_score_after", "matched_keywords_before", "matched_keywords_after",
         "keywords_added", "keywords_skipped", "unused_candidate_skills", "skills_reordered",
         "summary_rewritten", "experience_bullets_modified", "projects_modified", "highlights",
+        "rewrite_similarity_avg", "rewrite_quality_issues", "project_ranking",
     }
 
 
@@ -300,6 +301,37 @@ async def test_report_detects_skills_reordering(mock_genai):
 
 
 @pytest.mark.anyio
+async def test_report_includes_project_ranking_reasons(mock_genai):
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [],
+        "projects": [
+            {"name": "Relevant Project", "technologies": ["Azure", "Docker"]},
+            {"name": "Irrelevant Project", "technologies": ["COBOL"]},
+        ],
+    }
+    job = {"skills": ["Azure", "Docker"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            {"block_id": "skills", "new_text": "Python"},
+            {"block_id": "projects[0].description", "new_text": ""},
+            {"block_id": "projects[0].technologies", "new_text": "Azure, Docker"},
+            {"block_id": "projects[1].description", "new_text": ""},
+            {"block_id": "projects[1].technologies", "new_text": "COBOL"},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert result["report"]["project_ranking"] == [
+        {"name": "Relevant Project", "matched_on": ["Azure", "Docker"]},
+        {"name": "Irrelevant Project", "matched_on": []},
+    ]
+
+
+@pytest.mark.anyio
 async def test_report_counts_modified_project_entries(mock_genai):
     profile = {
         "technical_skills": ["Python"],
@@ -325,6 +357,238 @@ async def test_report_counts_modified_project_entries(mock_genai):
     result = await ResumeGenerationAgent().generate(profile, job)
 
     assert result["report"]["projects_modified"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Inferred keywords (see inferable_keywords.py / _augment_with_inferred_keywords)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_missing_keywords_includes_an_inferred_keyword_the_job_cares_about(mock_genai):
+    """The job lists "Agile" as a required skill; nothing in the candidate's
+    structured technologies/skills_demonstrated fields says "agile", but a
+    real bullet describes sprint-based work — that's real evidence, so the
+    keyword should be offered to the optimizer as missing, not silently
+    invisible the way it would be under literal tag-only matching."""
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {
+                "title": "Engineer", "company": "Acme",
+                "bullets": ["Delivered features in two-week agile sprints using Python"],
+                "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python", "Agile"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert "Agile Software Development" in result["missing_keywords"]
+
+
+@pytest.mark.anyio
+async def test_inferred_keyword_omitted_when_job_does_not_care(mock_genai):
+    """Same real evidence (agile sprints in the bullet text), but this job
+    never mentions Agile/Scrum/sprints at all — nothing should be offered
+    that the job itself doesn't ask for."""
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {
+                "title": "Engineer", "company": "Acme",
+                "bullets": ["Delivered features in two-week agile sprints using Python"],
+                "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert "Agile Software Development" not in result["missing_keywords"]
+
+
+@pytest.mark.anyio
+async def test_inferred_keyword_omitted_when_no_evidence_exists(mock_genai):
+    """The job wants Agile experience, but nothing in the candidate's real
+    text supports it — never offer an unbacked keyword, even a soft/process
+    one, as something the optimizer might weave in."""
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {
+                "title": "Engineer", "company": "Acme",
+                "bullets": ["Wrote a script to rename files"],
+                "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python", "Agile"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert "Agile Software Development" not in result["missing_keywords"]
+
+
+# ---------------------------------------------------------------------------
+# Rewrite quality measurement (see _rewrite_quality)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_rewrite_similarity_avg_is_none_when_nothing_changed(mock_genai):
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {"title": "Engineer", "company": "Acme", "bullets": ["Built APIs with Python"], "technologies": ["Python"]}
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            {"block_id": "skills", "new_text": "Python"},
+            # Bullet comes back byte-identical — nothing actually changed.
+            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built APIs with Python"},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert result["report"]["rewrite_similarity_avg"] is None
+    assert result["report"]["rewrite_quality_issues"] == []
+
+
+@pytest.mark.anyio
+async def test_rewrite_similarity_avg_reflects_a_real_rewrite(mock_genai):
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {"title": "Engineer", "company": "Acme", "bullets": ["Built APIs with Python"], "technologies": ["Python"]}
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            {"block_id": "skills", "new_text": "Python"},
+            {"block_id": "work_experience[0].bullets[0]",
+             "new_text": "Designed and shipped production REST APIs serving internal teams"},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert result["report"]["rewrite_similarity_avg"] is not None
+    assert result["report"]["rewrite_similarity_avg"] < 0.9
+
+
+@pytest.mark.anyio
+async def test_rewrite_quality_flags_a_keyword_stitched_on_with_minimal_change(mock_genai):
+    """A block that claims to now carry an added keyword but barely changed
+    in wording is a signal the keyword was appended rather than woven in —
+    see the STEP 1/STEP 2 editing philosophy in _SYSTEM_PROMPT."""
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {
+                "title": "Engineer", "company": "Acme",
+                # "Kubernetes" is only in the bullet's own prose, never tagged
+                # in technologies — so it starts out as a missing_keyword
+                # even though it's already truthfully present in the text.
+                "bullets": ["Built APIs with Python and deployed services with Kubernetes"],
+                "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python", "Kubernetes"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            {"block_id": "skills", "new_text": "Python"},
+            # Near-identical to the original — just a trailing period swap —
+            # while still "carrying" Kubernetes (it was already in the text).
+            {"block_id": "work_experience[0].bullets[0]",
+             "new_text": "Built APIs with Python and deployed services with Kubernetes,"},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert any(
+        "work_experience[0].bullets[0]" in issue for issue in result["report"]["rewrite_quality_issues"]
+    )
+
+
+def test_prompt_defines_a_two_step_rewrite_decision_framework():
+    """Regression guard: without an explicit, quantified decision rule, the
+    model tends to default to minimal cosmetic edits regardless of genuine
+    keyword gaps (see the review that motivated this framework) — a future
+    prompt edit must not silently drop it."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "STEP 1" in normalized_prompt
+    assert "STEP 1's \"yes\" branch" in normalized_prompt or "STEP 1" in normalized_prompt
+    assert "light polish only" in normalized_prompt
+
+
+def test_prompt_reconciles_style_preservation_with_the_rewrite_framework():
+    """Regression guard: priority item 4 ("preserve writing style") predates
+    the STEP 1/STEP 2 framework and, left unqualified, silently conflicts
+    with it — the model could use "the sentence already works" to justify
+    not rewriting a block STEP 2 says genuinely needs it. A future prompt
+    edit must not drop the explicit reconciliation."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "Preserve writing style ONLY when STEP 1 above found no applicable" in normalized_prompt
+
+
+def test_prompt_instructs_surfacing_unused_quantified_detail():
+    """Regression guard: a bullet can understate its own impact even when a
+    real number for the same fact exists elsewhere in candidate_profile —
+    a future prompt edit must not silently drop the instruction to use it
+    (never invent one)."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "understates or omits" in normalized_prompt
+    assert "Never invent a number or" in normalized_prompt
+
+
+def test_prompt_instructs_differentiating_thematically_similar_projects():
+    """Regression guard: without this, two genuinely distinct projects that
+    happen to share a high-level pitch (e.g. two stock-valuation tools) can
+    both get rewritten around the same angle, reading as repetition on the
+    resume — a future prompt edit must not silently drop this guidance."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "differentiate them by each project's actual" in normalized_prompt
+
+
+def test_prompt_summary_rule_names_generic_filler_to_avoid_when_retargeting():
+    """Regression guard: retargeting a summary for a specific job must not
+    be an excuse to flatten it back into generic phrasing — a future prompt
+    edit must not silently drop the explicit filler list here, matching
+    candidate_profile_agent.py's own list."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "eager to contribute to a dynamic team" in normalized_prompt
+
+
+def test_prompt_length_target_does_not_override_step_two_rewrites():
+    """Regression guard: the experience-bullet length guidance used to say
+    "never noticeably longer than the bullet's current length" with no
+    exception — read literally, that silently overrides STEP 2's
+    restructuring for any block that genuinely needs a few more words. A
+    future prompt edit must not reintroduce a hard ceiling here."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "a length target, not a hard ceiling" in normalized_prompt
 
 
 # ---------------------------------------------------------------------------

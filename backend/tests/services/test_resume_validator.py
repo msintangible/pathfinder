@@ -83,3 +83,43 @@ def test_does_not_flag_distinct_experience_entries():
     ]
     issues = validate_resume_structure(_resume(experience=experience))
     assert not any("duplicate" in issue for issue in issues)
+
+
+def test_flags_differently_named_projects_with_near_identical_descriptions():
+    projects = [
+        {
+            "name": "Stock Analysis Tool",
+            "description": "Uses machine learning to analyze stock behavior and provide "
+                            "signals on whether a stock may be overvalued or undervalued.",
+        },
+        {
+            "name": "Stock Valuation & Prediction Model",
+            "description": "Uses machine learning to analyze stock behavior and provide "
+                            "signals around whether a stock may be overvalued or undervalued.",
+        },
+    ]
+    issues = validate_resume_structure(_resume(projects=projects))
+    assert any(
+        "Stock Analysis Tool" in issue and "restating the same idea" in issue for issue in issues
+    )
+
+
+def test_does_not_flag_projects_with_genuinely_different_descriptions():
+    projects = [
+        {"name": "Stock Analysis Tool", "description": "An AI-powered stock analysis tool for retail investors."},
+        {"name": "QuantaScan", "description": "Scans a codebase and flags outdated cryptography."},
+    ]
+    issues = validate_resume_structure(_resume(projects=projects))
+    assert not any("restating the same idea" in issue for issue in issues)
+
+
+def test_similar_theme_check_does_not_duplicate_the_same_name_check():
+    # Exact-name duplicates are already covered by _duplicate_project_issues —
+    # this shouldn't also fire the theme-similarity message for the same pair.
+    projects = [
+        {"name": "Stock Valuation Model", "description": "A stock valuation tool."},
+        {"name": "Stock Valuation Model", "description": "A stock valuation tool."},
+    ]
+    issues = validate_resume_structure(_resume(projects=projects))
+    assert not any("restating the same idea" in issue for issue in issues)
+    assert any("duplicate project entry" in issue for issue in issues)

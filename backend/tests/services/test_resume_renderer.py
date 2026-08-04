@@ -145,6 +145,62 @@ def test_linkedin_github_portfolio_render_as_real_links():
     assert "https://janedoe.dev" in links
 
 
+def test_skill_groups_render_labels_and_items_in_a_table():
+    """skill_groups renders as a multi-column table (see resume.html) rather
+    than one full-width row per category — this only checks the text
+    content survives the table layout, not the visual column count, which
+    PyMuPDF text extraction can't directly assert."""
+    pdf_bytes = render_pdf(_resume(
+        name="Jane Doe",
+        skill_groups=[
+            {"label": "Languages", "items": ["Python", "Java"]},
+            {"label": "Cloud", "items": ["Azure", "Docker"]},
+        ],
+    ))
+
+    text = _page_text(pdf_bytes)
+
+    assert "Languages" in text
+    assert "Python" in text and "Java" in text
+    assert "Cloud" in text
+    assert "Azure" in text and "Docker" in text
+
+
+def test_skill_groups_with_more_than_three_categories_all_render():
+    """batch(3) wraps into additional table rows — every category must
+    still appear, not just the first three."""
+    pdf_bytes = render_pdf(_resume(
+        name="Jane Doe",
+        skill_groups=[
+            {"label": "Languages", "items": ["Python"]},
+            {"label": "Cloud", "items": ["Azure"]},
+            {"label": "Databases", "items": ["Postgres"]},
+            {"label": "DevOps", "items": ["Docker"]},
+            {"label": "Tools", "items": ["Git"]},
+        ],
+    ))
+
+    text = _page_text(pdf_bytes)
+
+    for label in ("Languages", "Cloud", "Databases", "DevOps", "Tools"):
+        assert label in text
+
+
+def test_skill_groups_with_empty_items_are_skipped():
+    pdf_bytes = render_pdf(_resume(
+        name="Jane Doe",
+        skill_groups=[
+            {"label": "Languages", "items": ["Python"]},
+            {"label": "Empty Category", "items": []},
+        ],
+    ))
+
+    text = _page_text(pdf_bytes)
+
+    assert "Languages" in text
+    assert "Empty Category" not in text
+
+
 def test_emphasis_filter_does_not_leak_markdown_asterisks():
     pdf_bytes = render_pdf(_resume(
         name="Jane Doe",
