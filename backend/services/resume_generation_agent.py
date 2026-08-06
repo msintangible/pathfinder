@@ -26,25 +26,12 @@ from services.llm_output import parse_llm_json
 from services.optimization_validator import validate_optimization_integrity
 from services.patch_engine import apply_patches
 from services.profile_deduplicator import merge_overlapping_bullets
-from services.profile_layout_correlator import correlate_profile_to_layout
 from services.relevance_ranker import rank_profile
-from services.synthetic_profile_layout import (
-    build_synthetic_layout,
-    flatten_layout_to_resume,
-    join_comma_list,
-    split_comma_list,
-)
+from services.synthetic_profile_layout import build_synthetic_layout, flatten_layout_to_resume
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
-
-# Real in-place rendering only kicks in when at least this fraction of
-# correlatable profile fields (bullets, descriptions, headline, summary)
-# found a confident real-document match — below this, the correlation this
-# run produced is too unreliable to trust, and generation falls back to the
-# existing generic-template renderer instead of risking a half-updated file.
-_RENDER_CONFIDENCE_THRESHOLD = 0.6
 
 _SYSTEM_PROMPT = """You are a professional resume editor, not a resume writer. Think Microsoft
 Word's Track Changes, not an AI generating a new document: you are making
@@ -299,6 +286,12 @@ class ResumeGenerationAgent:
         self._client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     async def generate(self, profile: dict, job: dict, layout_document: dict | None = None) -> dict:
+        # layout_document is accepted for call-site compatibility with
+        # api/v1/resume.py (which reads it from UserProfile.layout_document)
+        # but no longer used — real in-place document editing was removed
+        # (see the 2026-08 dead-code cleanup); every resume renders via the
+        # generic template (resume_renderer.py) now. The column/parameter
+        # itself is a separate, not-yet-made decision to drop.
         keyword_report = match_keywords(profile, job)
         keyword_report = _augment_with_inferred_keywords(keyword_report, profile, job)
         ranked = rank_profile(profile, keyword_report)
@@ -335,7 +328,8 @@ class ResumeGenerationAgent:
         ):
             logger.warning("generate: optimization integrity issue — %s", issue)
 
-        render_layout, layout_preserved = self._build_render_layout(ranked.profile, layout_document, patches)
+        # Always None/False now — see the comment on layout_document above.
+        render_layout, layout_preserved = None, False
 
         return {
             "ats_score": ats_score,
@@ -409,78 +403,6 @@ class ResumeGenerationAgent:
             rewrite_quality_issues=rewrite_quality_issues,
             project_ranking=project_ranking,
         )
-
-    def _build_render_layout(
-        self, ranked_profile: dict, layout_document: dict | None, patches: list[ContentPatch]
-    ) -> tuple[dict | None, bool]:
-        """
-        Re-applies the LLM's synthetic-id patches to the *real* document
-        layout, via a one-time text correlation (profile_layout_correlator.py)
-        between the ranked profile and profile.layout_document — so
-        docx_renderer_v2/pdf_renderer_v2 can edit the candidate's actual
-        uploaded file instead of only ever producing optimized_resume for the
-        API/DB/UI. Returns (None, False) whenever there's no source document,
-        or the correlation wasn't confident enough to trust.
-        """
-        if layout_document is None:
-            logger.debug("_build_render_layout: no layout_document given — skipping real in-place rendering")
-            return None, False
-
-        real_layout = ResumeLayoutDocument.model_validate(layout_document)
-        correlation = correlate_profile_to_layout(ranked_profile, real_layout)
-        logger.info(
-            "_build_render_layout: correlation matched %d/%d fields (%.0f%%), skills %s, threshold=%.0f%%",
-            correlation.matched_count, correlation.total_count, correlation.match_rate * 100,
-            "matched" if "skills" in correlation.block_id_map else "unmatched",
-            _RENDER_CONFIDENCE_THRESHOLD * 100,
-        )
-        if correlation.match_rate < _RENDER_CONFIDENCE_THRESHOLD:
-            logger.warning(
-                "Layout correlation confidence too low (%.0f%% < %.0f%%) — falling back to the generic renderer",
-                correlation.match_rate * 100, _RENDER_CONFIDENCE_THRESHOLD * 100,
-            )
-            return None, False
-
-        real_patches = []
-        skills_new_text: str | None = None
-        for patch in patches:
-            if patch.block_id == "skills":
-                skills_new_text = patch.new_text
-                continue
-            real_block_id = correlation.block_id_map.get(patch.block_id)
-            if real_block_id is None:
-                logger.debug(
-                    "_build_render_layout: dropping patch for %s — no real-document correlation found",
-                    patch.block_id,
-                )
-                continue
-            real_patches.append(ContentPatch(block_id=real_block_id, new_text=patch.new_text))
-        llm_patches_applied = len(real_patches)
-
-        # A multi-block skills section (e.g. one line per category) has no
-        # single block to hold one consolidated list, so instead of writing
-        # everything to one line and blanking the rest, the list is split
-        # across every original skills block — each keeps its own rect
-        # rather than one line being asked to fit what N lines used to hold.
-        skills_primary_block_id = correlation.block_id_map.get("skills")
-        if skills_new_text is not None and skills_primary_block_id is not None:
-            skills_block_ids = [skills_primary_block_id, *correlation.skills_overflow_block_ids]
-            items = split_comma_list(skills_new_text)
-            for block_id, chunk in zip(skills_block_ids, _chunk_evenly(items, len(skills_block_ids))):
-                real_patches.append(ContentPatch(block_id=block_id, new_text=join_comma_list(chunk)))
-            llm_patches_applied += 1
-            if len(skills_block_ids) > 1:
-                logger.info(
-                    "_build_render_layout: distributed the skills patch across %d original skills block(s)",
-                    len(skills_block_ids),
-                )
-
-        real_patch_result = apply_patches(real_layout, real_patches)
-        logger.info(
-            "_build_render_layout: applied %d/%d patches to the real document layout",
-            llm_patches_applied, len(patches),
-        )
-        return real_patch_result.document.model_dump(), True
 
     async def _optimize(
         self, layout: ResumeLayoutDocument, ranked_profile: dict, job: dict, keyword_report: KeywordReport
@@ -634,17 +556,3 @@ def _skills_reordered(ranked_profile: dict, optimized_skills: list[str]) -> bool
     common_baseline = [item for item in baseline if item in optimized]
     common_optimized = [item for item in optimized if item in baseline]
     return common_baseline != common_optimized
-
-
-def _chunk_evenly(items: list[str], chunk_count: int) -> list[list[str]]:
-    """Splits items into chunk_count roughly-equal, order-preserving groups,
-    front-loading any remainder (e.g. 7 items / 3 chunks -> sizes [3, 2, 2])
-    so earlier chunks get the extra item rather than the last one."""
-    base, remainder = divmod(len(items), chunk_count)
-    chunks: list[list[str]] = []
-    cursor = 0
-    for i in range(chunk_count):
-        size = base + (1 if i < remainder else 0)
-        chunks.append(items[cursor:cursor + size])
-        cursor += size
-    return chunks
