@@ -20,7 +20,7 @@ from database.session import engine
 from models.base import Base
 
 # Without this, the root logger stays at its default WARNING level and every
-# logger.info/debug call app-wide (resume_generation_agent, profile_layout_correlator,
+# logger.info/debug call app-wide (resume_generation_agent, optimization_validator,
 # etc.) is silently dropped — only uvicorn's own request logs and actual
 # exceptions would ever show up.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")

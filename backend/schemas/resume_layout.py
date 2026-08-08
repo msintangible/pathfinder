@@ -2,9 +2,12 @@
 Schemas for the Resume Layout Model.
 
 Structure, style, and content are kept separate: TextBlock.text is the only
-field an editing LLM should ever read or write. Renderers use anchor + runs
-to know where and how to write a change back into the original file. See
-docx_layout_extractor.py for how DOCX documents are parsed into this shape.
+field an editing LLM should ever read or write. anchor/runs (docx_anchor,
+pdf_anchor, RunSpan.hyperlink_url) were designed for real-document parsing
+and in-place editing, which was removed (see the 2026-08 dead-code cleanup)
+— synthetic_profile_layout.py is the only builder of this shape now, and
+always leaves those fields at their defaults. Kept as-is pending a follow-up
+simplification pass.
 """
 
 from enum import Enum
@@ -86,18 +89,6 @@ class LayoutSection(BaseModel):
 class ResumeLayoutDocument(BaseModel):
     source_format: str  # "docx" | "pdf"
     sections: list[LayoutSection] = []
-
-
-class PageSectionLabel(BaseModel):
-    """One semantic grouping of blocks on a page, as labeled by
-    gemini_vision_layout_agent.py — every block_id on the page must appear in
-    exactly one label."""
-    role: SectionRole
-    block_ids: list[str]
-
-
-class PageLabelingResult(BaseModel):
-    sections: list[PageSectionLabel]
 
 
 class ContentPatch(BaseModel):

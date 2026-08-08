@@ -184,9 +184,8 @@ class ResumeGenerationResponse(BaseModel):
     # model's own grouped highlights/keyword-skip reasoning.
     report: OptimizationReport
     download_url: str
-    # True when the candidate's own uploaded docx/pdf was edited in place
-    # (docx_renderer_v2.py / pdf_renderer_v2.py); False when generation fell
-    # back to the generic Jinja2/xhtml2pdf template — either because there
-    # was no source document, or profile_layout_correlator.py's confidence
-    # gate rejected the correlation this run produced.
+    # Always False now — in-place editing of the candidate's own uploaded
+    # document was removed (see the 2026-08 dead-code cleanup); every
+    # resume renders via the generic Jinja2/xhtml2pdf template. Field kept,
+    # not yet dropped, pending a separate decision.
     layout_preserved: bool = False

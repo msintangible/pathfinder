@@ -18,12 +18,9 @@ from schemas.profile import (
     ProfileRestoreResponse,
 )
 from services.candidate_profile_agent import CandidateProfileAgent
-from services.docx_layout_extractor import DocxLayoutExtractionError, extract_docx_layout
 from services.docx_text_extractor import DocxExtractionError, extract_docx_text
-from services.gemini_vision_layout_agent import GeminiVisionLayoutAgent
 from services.github_profile_fetcher import fetch_github_profile
 from services.llm_output import LLMOutputError
-from services.pdf_layout_extractor import PdfLayoutExtractionError, extract_pdf_layout
 from services.pdf_text_extractor import PDFExtractionError, extract_pdf_text
 from services.portfolio_scraper import fetch_portfolio_text
 from services.repository.profile_repository import ProfileRepository
@@ -50,33 +47,6 @@ def _is_docx(file: UploadFile) -> bool:
 
 def _save_source_document(file_bytes: bytes, extension: str) -> str:
     return LocalResumeStorage().save(file_bytes, f"source-{uuid.uuid4().hex}.{extension}")
-
-
-def _try_build_docx_layout(file_bytes: bytes) -> dict | None:
-    try:
-        return extract_docx_layout(file_bytes).model_dump()
-    except DocxLayoutExtractionError:
-        logger.warning("Could not build a docx layout document for this upload; falling back to text-only.")
-        return None
-
-
-async def _try_build_pdf_layout(file_bytes: bytes) -> dict | None:
-    try:
-        layout = extract_pdf_layout(file_bytes)
-    except PdfLayoutExtractionError:
-        logger.warning("Could not build a pdf layout document for this upload; falling back to text-only.")
-        return None
-
-    try:
-        layout = await GeminiVisionLayoutAgent().label_document(file_bytes, layout)
-    except Exception:
-        # Vision labeling only adds section-role metadata (used by the Patch
-        # Engine's skills-section handling) on top of the already-usable
-        # deterministic extraction above — a Gemini outage/quota error here
-        # must not block profile import over a best-effort enhancement.
-        logger.warning("Vision layout labeling failed; using unlabeled PDF layout.", exc_info=True)
-
-    return layout.model_dump()
 
 
 @router.post("/import", response_model=ProfileImportResponse)
@@ -116,23 +86,21 @@ async def import_profile(
             except DocxExtractionError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-            # Stored so resume generation can edit this file in place later
-            # (preserving its real layout) instead of rendering a generic
-            # template — see docx_renderer_v2.py.
+            # Original upload, kept for reference/download — no longer used
+            # for in-place editing (see the 2026-08 dead-code cleanup); every
+            # resume renders via the generic template (resume_renderer.py).
             source_document_path = _save_source_document(file_bytes, "docx")
             source_document_format = "docx"
-            layout_document = _try_build_docx_layout(file_bytes)
         else:
             try:
                 resume_text = extract_pdf_text(file_bytes) or None
             except PDFExtractionError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-            # Stored so resume generation can edit this file in place later —
-            # see pdf_renderer_v2.py.
+            # Original upload, kept for reference/download — see the docx
+            # branch above.
             source_document_path = _save_source_document(file_bytes, "pdf")
             source_document_format = "pdf"
-            layout_document = await _try_build_pdf_layout(file_bytes)
 
     if not resume_text and not (linkedin_url or github_url or portfolio_url):
         raise HTTPException(status_code=400, detail="Provide a CV file or at least one profile URL.")

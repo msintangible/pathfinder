@@ -57,17 +57,15 @@ class ResumeVersion(Base, PrimaryKeyMixin):
     # this field existed have none.
     report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
-    # Set by the render worker once the file is ready. format is "pdf" (built
-    # from templates/resume.html, or the candidate's original pdf edited in
-    # place — see layout_preserved) or "docx" (the candidate's original file,
-    # edited in place — see docx_renderer_v2.py) so the download endpoint
-    # knows which media type/extension to serve.
+    # Set by the render worker once the file is ready. Always "pdf", built
+    # from templates/resume.html, so the download endpoint knows which media
+    # type/extension to serve.
     rendered_file_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     rendered_file_format: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # True when rendered_file_url is the candidate's own uploaded document
-    # edited in place; False when it's the generic Jinja2/xhtml2pdf template
-    # (no source document, or profile_layout_correlator.py's confidence gate
-    # rejected the correlation this run produced).
+    # Always False now — in-place editing of the candidate's own uploaded
+    # document was removed (see the 2026-08 dead-code cleanup); every resume
+    # renders via the generic Jinja2/xhtml2pdf template. Column kept, not yet
+    # dropped, pending a separate decision.
     layout_preserved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     created_at: Mapped[datetime] = mapped_column(

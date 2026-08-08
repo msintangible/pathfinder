@@ -5,12 +5,17 @@ changes into an updated ResumeLayoutDocument.
 Per this project's architecture rule, the optimization LLM only ever emits
 ContentPatch[] ({block_id, new_text} pairs) — never a modified layout model
 directly. This module is the deterministic step that validates those patches
-against a real ResumeLayoutDocument and applies them, redistributing each
-block's new text across its existing RunSpans so per-run formatting (bold/
-italic/font) survives a wording change. Renderers (docx_renderer_v2.py,
-pdf_renderer_v2.py — later phases) only ever see the *already-patched*
-document; they contain no patch-matching or redistribution logic of their
-own.
+against a ResumeLayoutDocument and applies them, redistributing each block's
+new text across its existing RunSpans so per-run formatting (bold/italic/
+font) survives a wording change.
+
+The multi-run/hyperlink-preserving redistribution logic below (everything
+past _redistribute_single_run) was written for real uploaded-document
+editing, which was removed (see the 2026-08 dead-code cleanup) — the only
+caller now, synthetic_profile_layout.build_synthetic_layout, always
+produces single-run, no-hyperlink blocks, so those branches are currently
+unreachable in production. Left in place pending a follow-up simplification
+pass, not because they're still needed.
 """
 
 import logging

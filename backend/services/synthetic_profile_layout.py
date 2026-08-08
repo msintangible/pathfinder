@@ -5,13 +5,10 @@ candidate, regardless of whether they uploaded a source document.
 
 Block ids are minted from the ranked profile dict's own structure (e.g.
 "work_experience[0].bullets[1]"), not a real document position — docx_anchor
-and pdf_anchor are always None here. The LLM only ever sees and patches these
-profile-relative ids; profile_layout_correlator.py separately maps them to
-real document block ids (profile.layout_document) for in-place rendering, so
-this module stays usable for every profile regardless of source format —
-including profiles with no source document at all (LinkedIn/GitHub-only),
-where no correlation is possible and generation falls back to the generic
-template renderer.
+and pdf_anchor are always None here. The LLM only ever sees and patches
+these profile-relative ids; every resume renders via the generic template
+(resume_renderer.py) regardless of source format, including profiles with
+no source document at all (LinkedIn/GitHub-only).
 """
 
 import re

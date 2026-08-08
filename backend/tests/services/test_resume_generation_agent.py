@@ -9,14 +9,11 @@ The agent is a controller, not a single LLM call:
   Engine + flattening) reconstructs the OptimizedResume-shaped dict.
 - The returned dict matches the documented pipeline output shape.
 """
-import io
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import docx
 import pytest
 
-from services.docx_layout_extractor import extract_docx_layout
 from services.llm_output import LLMOutputError
 from services.resume_generation_agent import _SYSTEM_PROMPT, ResumeGenerationAgent
 
@@ -124,7 +121,10 @@ async def test_returns_full_pipeline_output_shape(mock_genai):
     }
     assert result["optimized_resume"] == _EXPECTED_OPTIMIZED_RESUME
     assert result["patches"] == _PATCHES_RESPONSE["patches"]
-    assert result["render_layout"] is None  # no layout_document was given
+    # Always None/False now — real in-place document editing was removed
+    # (see the 2026-08 dead-code cleanup); every resume renders via the
+    # generic template. Kept in the output shape for API/DB compatibility.
+    assert result["render_layout"] is None
     assert result["layout_preserved"] is False
     assert set(result["report"].keys()) == {
         "ats_score_before", "ats_score_after", "matched_keywords_before", "matched_keywords_after",
@@ -132,6 +132,22 @@ async def test_returns_full_pipeline_output_shape(mock_genai):
         "summary_rewritten", "experience_bullets_modified", "projects_modified", "highlights",
         "rewrite_similarity_avg", "rewrite_quality_issues", "project_ranking",
     }
+
+
+@pytest.mark.anyio
+async def test_layout_document_is_accepted_but_has_no_effect(mock_genai):
+    """Regression guard: layout_document is still accepted for call-site
+    compatibility with api/v1/resume.py, but real in-place document editing
+    was removed — passing a real-looking dict must not change the output,
+    only whether generate() accepts it without error."""
+    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
+
+    result = await ResumeGenerationAgent().generate(
+        _PROFILE, _JOB, layout_document={"source_format": "docx", "sections": []},
+    )
+
+    assert result["render_layout"] is None
+    assert result["layout_preserved"] is False
 
 
 @pytest.mark.anyio
@@ -656,232 +672,6 @@ async def test_sends_full_candidate_profile_as_context(mock_genai):
 
     contents = json.loads(mock_genai.aio.models.generate_content.call_args.kwargs["contents"])
     assert contents["candidate_profile"]["technical_skills"] == ["Python", "AWS"]
-
-
-# ---------------------------------------------------------------------------
-# layout_document — real in-place rendering via profile_layout_correlator.py
-# ---------------------------------------------------------------------------
-
-def _make_docx_bytes(paragraphs: list[str]) -> bytes:
-    document = docx.Document()
-    for text in paragraphs:
-        document.add_paragraph(text)
-    buffer = io.BytesIO()
-    document.save(buffer)
-    return buffer.getvalue()
-
-
-def _make_docx_bytes_with_styles(paragraphs: list[tuple[str, str | None]]) -> bytes:
-    document = docx.Document()
-    for text, style_name in paragraphs:
-        document.add_paragraph(text, style=style_name)
-    buffer = io.BytesIO()
-    document.save(buffer)
-    return buffer.getvalue()
-
-
-@pytest.mark.anyio
-async def test_confident_correlation_produces_a_patched_real_layout(mock_genai):
-    # The real document's text closely matches the profile fields it was
-    # extracted from, so correlation should confidently find every block.
-    docx_bytes = _make_docx_bytes([
-        "Backend Engineer",
-        "Built APIs with Python and AWS",
-    ])
-    layout_document = extract_docx_layout(docx_bytes).model_dump()
-    profile = {
-        "headline": "Backend Engineer",
-        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
-    }
-    mock_genai.aio.models.generate_content.return_value = _make_response({
-        "patches": [
-            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
-            {"block_id": "summary", "new_text": ""},
-            {"block_id": "skills", "new_text": ""},
-            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
-            {"block_id": "changes_summary", "new_text": ""},
-        ]
-    })
-
-    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
-
-    assert result["layout_preserved"] is True
-    real_blocks = {
-        block["block_id"]: block["text"]
-        for section in result["render_layout"]["sections"]
-        for block in section["blocks"]
-    }
-    assert real_blocks["paragraph[0]"] == "Senior Backend Engineer"
-    assert real_blocks["paragraph[1]"] == "Built scalable APIs with Python and AWS"
-
-
-@pytest.mark.anyio
-async def test_skills_patch_is_distributed_across_overflow_blocks(mock_genai):
-    # A multi-line skills section: instead of writing the whole list to the
-    # first line and blanking the rest, each line gets its own roughly-even
-    # share so no single line has to fit what used to span several.
-    docx_bytes = _make_docx_bytes_with_styles([
-        ("Backend Engineer", None),
-        ("Skills", "Heading 1"),
-        ("Python", None),
-        ("PostgreSQL", None),
-        ("Built APIs with Python and AWS", None),
-    ])
-    layout_document = extract_docx_layout(docx_bytes).model_dump()
-    profile = {
-        "headline": "Backend Engineer",
-        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
-    }
-    mock_genai.aio.models.generate_content.return_value = _make_response({
-        "patches": [
-            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
-            {"block_id": "skills", "new_text": "Python, PostgreSQL, Docker"},
-            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
-        ]
-    })
-
-    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
-
-    real_blocks = {
-        block["block_id"]: block["text"]
-        for section in result["render_layout"]["sections"]
-        for block in section["blocks"]
-    }
-    assert real_blocks["paragraph[2]"] == "Python, PostgreSQL"
-    assert real_blocks["paragraph[3]"] == "Docker"
-
-
-@pytest.mark.anyio
-async def test_skills_patch_distributed_across_three_blocks_loses_no_items(mock_genai):
-    # Mirrors a real "Technical Skills" section: heading + 3 category lines.
-    # Every item from the LLM's compiled list must land in exactly one
-    # block, with no item dropped or duplicated across the split.
-    docx_bytes = _make_docx_bytes_with_styles([
-        ("Backend Engineer", None),
-        ("Skills", "Heading 1"),
-        ("Python", None),
-        ("PostgreSQL", None),
-        ("Docker", None),
-        ("Built APIs with Python and AWS", None),
-    ])
-    layout_document = extract_docx_layout(docx_bytes).model_dump()
-    profile = {
-        "headline": "Backend Engineer",
-        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
-    }
-    skills_items = ["Python", "Java", "SQL", "HTML5", "CSS", "JavaScript", "TypeScript"]
-    mock_genai.aio.models.generate_content.return_value = _make_response({
-        "patches": [
-            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
-            {"block_id": "skills", "new_text": ", ".join(skills_items)},
-            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
-        ]
-    })
-
-    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
-
-    real_blocks = {
-        block["block_id"]: block["text"]
-        for section in result["render_layout"]["sections"]
-        for block in section["blocks"]
-    }
-    skills_block_ids = ["paragraph[2]", "paragraph[3]", "paragraph[4]"]
-    chunks = [real_blocks[block_id] for block_id in skills_block_ids]
-    assert all(chunk for chunk in chunks)  # every block got a non-empty share
-    recombined = [item.strip() for chunk in chunks for item in chunk.split(",")]
-    assert recombined == skills_items
-
-
-@pytest.mark.anyio
-async def test_single_block_skills_section_gets_the_full_list_unsplit(mock_genai):
-    docx_bytes = _make_docx_bytes_with_styles([
-        ("Backend Engineer", None),
-        ("Skills", "Heading 1"),
-        ("Python", None),
-        ("Built APIs with Python and AWS", None),
-    ])
-    layout_document = extract_docx_layout(docx_bytes).model_dump()
-    profile = {
-        "headline": "Backend Engineer",
-        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
-    }
-    mock_genai.aio.models.generate_content.return_value = _make_response({
-        "patches": [
-            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
-            {"block_id": "skills", "new_text": "Python, PostgreSQL, Docker"},
-            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
-        ]
-    })
-
-    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
-
-    real_blocks = {
-        block["block_id"]: block["text"]
-        for section in result["render_layout"]["sections"]
-        for block in section["blocks"]
-    }
-    assert real_blocks["paragraph[2]"] == "Python, PostgreSQL, Docker"
-
-
-@pytest.mark.anyio
-async def test_skills_overflow_blocks_are_untouched_without_a_skills_patch(mock_genai):
-    # Same multi-line skills section, but the model never emits a "skills"
-    # patch — the overflow blocks must be left exactly as-is, not blanked.
-    docx_bytes = _make_docx_bytes_with_styles([
-        ("Backend Engineer", None),
-        ("Skills", "Heading 1"),
-        ("Python", None),
-        ("PostgreSQL", None),
-        ("Built APIs with Python and AWS", None),
-    ])
-    layout_document = extract_docx_layout(docx_bytes).model_dump()
-    profile = {
-        "headline": "Backend Engineer",
-        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
-    }
-    mock_genai.aio.models.generate_content.return_value = _make_response({
-        "patches": [
-            {"block_id": "headline", "new_text": "Senior Backend Engineer"},
-            {"block_id": "work_experience[0].bullets[0]", "new_text": "Built scalable APIs with Python and AWS"},
-        ]
-    })
-
-    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
-
-    real_blocks = {
-        block["block_id"]: block["text"]
-        for section in result["render_layout"]["sections"]
-        for block in section["blocks"]
-    }
-    assert real_blocks["paragraph[2]"] == "Python"
-    assert real_blocks["paragraph[3]"] == "PostgreSQL"
-
-
-@pytest.mark.anyio
-async def test_low_confidence_correlation_falls_back_without_a_render_layout(mock_genai):
-    # Nothing in this document resembles the profile's fields at all.
-    docx_bytes = _make_docx_bytes(["Completely unrelated filler text."])
-    layout_document = extract_docx_layout(docx_bytes).model_dump()
-    profile = {
-        "headline": "Backend Engineer",
-        "work_experience": [{"bullets": ["Built APIs with Python and AWS"]}],
-    }
-    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
-
-    result = await ResumeGenerationAgent().generate(profile, _JOB, layout_document=layout_document)
-
-    assert result["layout_preserved"] is False
-    assert result["render_layout"] is None
-
-
-@pytest.mark.anyio
-async def test_no_layout_document_means_no_render_layout(mock_genai):
-    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
-
-    result = await ResumeGenerationAgent().generate(_PROFILE, _JOB, layout_document=None)
-
-    assert result["layout_preserved"] is False
-    assert result["render_layout"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -13,11 +13,11 @@ _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 _env = Environment(loader=FileSystemLoader(_TEMPLATES_DIR), autoescape=True)
 
 # The one fixed section order every resume is rendered with, now that this
-# template is the sole renderer (in-place docx/pdf editing is no longer
-# wired in — see api/v1/resume.py). Previously this deferred to each
-# candidate's own document structure via resume_section_order.py's
-# inference, which doesn't apply anymore now that every resume shares this
-# same layout regardless of how it was originally formatted.
+# template is the sole renderer (in-place docx/pdf editing was removed —
+# see the 2026-08 dead-code cleanup). Previously this deferred to each
+# candidate's own document structure via a per-document inference step,
+# which doesn't apply anymore now that every resume shares this same
+# layout regardless of how it was originally formatted.
 CANONICAL_SECTION_ORDER = [
     "summary",
     "education",
