@@ -110,6 +110,51 @@ def test_merges_duplicate_projects_keeping_longer_description_and_union_of_tech(
     assert set(merged["technologies"]) == {"Python", "Pandas", "Matplotlib", "XGBoost", "Streamlit"}
 
 
+def test_merges_duplicate_projects_unioning_structured_evidence_fields():
+    """The Projects-redesign Phase A fields (architecture/responsibilities/
+    technical_achievements/impact/deployment) must merge the same way as
+    the pre-existing technologies/skills_demonstrated/notable_achievements
+    fields — union, not silently keeping only one source's data — and
+    problem/solution merge the same way description already does (longer
+    text wins)."""
+    short_problem = "Meetings produce unstructured notes."
+    long_problem = "Meetings produce unstructured notes that are hard to turn into engineering requirements."
+    profile = _profile(projects=[
+        {
+            "name": "distill.",
+            "problem": short_problem,
+            "solution": "Built a transcription tool.",
+            "architecture": ["FastAPI WebSocket backend"],
+            "responsibilities": ["Backend architecture"],
+            "technical_achievements": ["Sub-second transcription latency"],
+            "impact": [],
+            "deployment": [],
+        },
+        {
+            "name": "distill.",
+            "problem": long_problem,
+            "solution": "",
+            "architecture": ["ElevenLabs Realtime STT"],
+            "responsibilities": ["LLM pipeline"],
+            "technical_achievements": [],
+            "impact": ["Winner (Best Use of ElevenLabs) at HackBelfast 2026"],
+            "deployment": ["Azure"],
+        },
+    ])
+
+    result = dedupe_profile(profile)
+
+    assert len(result["projects"]) == 1
+    merged = result["projects"][0]
+    assert merged["problem"] == long_problem
+    assert merged["solution"] == "Built a transcription tool."
+    assert set(merged["architecture"]) == {"FastAPI WebSocket backend", "ElevenLabs Realtime STT"}
+    assert set(merged["responsibilities"]) == {"Backend architecture", "LLM pipeline"}
+    assert merged["technical_achievements"] == ["Sub-second transcription latency"]
+    assert merged["impact"] == ["Winner (Best Use of ElevenLabs) at HackBelfast 2026"]
+    assert merged["deployment"] == ["Azure"]
+
+
 def test_does_not_merge_projects_with_different_names():
     profile = _profile(projects=[
         {"name": "Kitchen Copilot", "description": "a"},

@@ -75,6 +75,21 @@ class Project(BaseModel):
     technologies: list[str] = []
     skills_demonstrated: list[str] = []
     notable_achievements: list[str] = []
+    # Structured project evidence (Phase A of the Projects redesign) — gives
+    # the resume generation agent distinct, purposeful facts to draw
+    # separate bullets from (what was built, how, what was hard about it,
+    # what it achieved) instead of one flat description plus a loose
+    # achievements bucket. Kept additive alongside notable_achievements for
+    # now — a later phase wires synthetic_profile_layout.py and
+    # resume_generation_agent.py to actually use these and decides whether/
+    # how to consolidate with notable_achievements then.
+    problem: str | None = None
+    solution: str | None = None
+    architecture: list[str] = []
+    responsibilities: list[str] = []
+    technical_achievements: list[str] = []
+    impact: list[str] = []
+    deployment: list[str] = []
 
 
 class AnalyzedRepo(BaseModel):

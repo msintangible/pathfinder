@@ -12,6 +12,7 @@ from google.genai import types
 from schemas.resume import ChangeHighlight, KeywordSkipReason, OptimizationPatchResponse, OptimizationReport
 from schemas.resume_layout import ContentPatch, ResumeLayoutDocument
 from services.ats_scorer import compute_ats
+from services.keyword_evidence import classify_keyword
 from services.keyword_matcher import (
     PROFILE_SKILL_FIELDS,
     KeywordReport,
@@ -70,9 +71,16 @@ Editing philosophy — apply this exact two-step test to every editable
 block, not just the ones that obviously need it (summary and skills
 included):
 
-STEP 1: Does this job have a missing_keyword, required_skill, or
-preferred_skill that this block's real, described work could truthfully
-demonstrate (per the ATS keyword test below)?
+STEP 1: Does this job have an applicable keyword for this block — either:
+  (a) a missing_keyword this block's real, described work could truthfully
+      demonstrate, or
+  (b) a keyword_evidence entry with "status": "supported" and
+      "evidence_type" "alias", "semantic", or "experience" (i.e. already
+      genuinely proven — never "exact", nothing to do there — see "Using
+      keyword_evidence" below) whose evidence overlaps this block's real
+      subject matter, and whose own keyword wording doesn't already appear
+      in this block?
+(per the ATS keyword test below)
 
   IF NO applicable keyword exists for this block:
     Leave the block's core content unchanged. Only fix objective
@@ -80,8 +88,7 @@ demonstrate (per the ATS keyword test below)?
     quantification of the same fact) — this bullet should still read as
     clearly "the same bullet," light polish only.
 
-  IF YES — one or more missing/required/preferred keywords genuinely
-  apply:
+  IF YES — one or more keywords genuinely apply:
     Rewrite the block enough that a reader placing the original and your
     version side-by-side can immediately see WHERE the new emphasis is,
     not just that a synonym changed. Lead with the angle this job cares
@@ -93,6 +100,19 @@ demonstrate (per the ATS keyword test below)?
 
 Never invent to satisfy STEP 1's "yes" branch — if no genuine angle
 exists, the honest answer was actually "no"; treat it as such.
+
+Using keyword_evidence for (b): each entry's "evidence" list names the
+specific profile facts — a technology, a bullet phrase — that already
+prove the keyword true. For example {"keyword": "relational databases",
+"status": "supported", "evidence_type": "semantic", "evidence": ["Azure
+SQL", "SQL Server"]} means the candidate has genuinely worked with
+relational databases, proven by those two products. If a block already
+describes work with one of those evidence items, you may name the
+umbrella term ("relational databases") alongside it — this is not
+invention, it's using the employer's own vocabulary for a claim the
+profile itself already proves. Never do this for an entry whose "status"
+is "unsupported": that's exactly the unproven claim the "Never allowed"
+rules below forbid.
 
 When a bullet or project description honestly supports more than one angle,
 lead with whichever angle this specific job cares about most — don't default
@@ -135,15 +155,17 @@ Priority order — resolve conflicts between these in this order:
 
 ATS keyword test — apply this to every bullet/description block before
 rewriting it: "Can this block naturally demonstrate any currently
-missing_keyword, required_skill, or preferred_skill using the candidate's
+missing_keyword, or name the employer's own term for a keyword_evidence
+entry already supported elsewhere in this block, using the candidate's
 real experience already described here?" If yes, rewrite the wording to
 surface that concept naturally, the way a technical resume would phrase it —
 never as a bolted-on keyword list.
   Bad:  "Worked on cloud research. Skills: AWS Lambda, API Gateway, EC2."
   Good: "Researched AWS Lambda, API Gateway, and EC2 to support cloud
          architecture and scalability decisions."
-If no genuine support exists for a missing_keyword, leave the block alone —
-never fabricate the experience to claim it.
+If no genuine support exists for a missing_keyword — or a keyword_evidence
+entry's status is "unsupported" — leave the block alone; never fabricate
+the experience to claim it.
 
 Never force a keyword into a block whose real subject matter doesn't
 actually match it, even if the two sound topically adjacent. A keyword only
@@ -208,12 +230,43 @@ Section rules:
   experience entry to fit the 2-page budget (see resume_page_fitter.py),
   not just this one bullet — so this is still a real constraint, just not
   one that should silently override STEP 2.
-- projects: description, technologies, and each notable_achievements bullet
-  may all be reworded/surfaced the same way as experience bullets — every
-  project bullet is a real block_id you were given, not just the
-  description. Lead with the outcome/impact of the project (what it did,
-  what changed as a result), not just what it's built with; entry order is
-  decided upstream, not by you.
+- projects: every block_id you were given for a project is real and must be
+  filled — description, technologies, and whichever bullets exist for this
+  specific project (architecture_bullet, technical_achievement_bullet,
+  impact_bullet, and/or achievements[k], depending on what evidence this
+  project actually has — see below). Each bullet has a distinct purpose;
+  never let two bullets restate the same fact in different words:
+    - description ("what was built"): the problem it addressed and what
+      was built to solve it, in one or two sentences. Source this from
+      candidate_profile.projects[i].problem and .solution when they exist,
+      alongside description's own existing text — don't just restate the
+      tech stack here, that's what the technologies block and other
+      bullets are for.
+    - architecture_bullet (if present — it only exists when
+      candidate_profile.projects[i].architecture has real entries): the
+      technical implementation — real components and design decisions from
+      that architecture list, phrased as a sentence, not a bare list.
+    - technical_achievement_bullet (if present — from
+      .technical_achievements): a specific engineering win or hard problem
+      actually solved — a technique, an optimization, a validation
+      approach — not a restatement of what the architecture bullet already
+      said.
+    - impact_bullet (if present — from .impact): the measurable outcome —
+      an award, a metric, adoption, deployment reach. This is the one place
+      a number or achievement belongs; don't bury it in another bullet.
+    - achievements[k] (legacy — only exists when the project has no
+      architecture/technical_achievements/impact of its own yet): treat
+      exactly like the old notable_achievements bullets always worked —
+      genuine additional detail, reworded/surfaced like any other bullet.
+  A purpose bullet's block is blank canvas (no starting text) precisely
+  because it doesn't exist unless real evidence backs it — you're
+  synthesizing one sentence from the named structured field's real content,
+  never inventing detail that field doesn't contain. If a project has none
+  of architecture/technical_achievements/impact populated, it will simply
+  have fewer bullet blocks — do not pad a bullet with restated description
+  content or generic filler to make up the difference.
+  Lead every bullet with the outcome/impact of that specific fact, not just
+  what it's built with; entry order is decided upstream, not by you.
   If two or more projects share similar high-level subject matter (e.g. two
   projects that are both, at a glance, "a stock valuation tool"), don't let
   their descriptions restate the same angle — you can see every project in
@@ -223,6 +276,12 @@ Section rules:
   project's own real details. A reader skimming the Projects section should
   be able to tell what's actually different about each one, not read the
   same idea twice in different words.
+  technologies (the tech-stack block): reorder/prioritize this project's
+  own real technologies to lead with whatever's most relevant to this job —
+  never add one that isn't already in candidate_profile.projects[i]
+  .technologies, even if the job explicitly lists it as required. A
+  technology only belongs in this block if this specific project actually
+  used it; wanting the job to see it is never sufficient reason.
 Reasoning output — separate from editable_blocks, this is how you explain
 what you did instead of the resume itself:
 - highlights: one entry per *section* you touched (Summary, Skills,
@@ -230,8 +289,8 @@ what you did instead of the resume itself:
   in that section into a single sentence. Never write a separate highlight
   for every small edit — that reads as repetitive noise, not a report. Each
   highlight's summary must say what changed AND why it matters for this
-  job in one sentence (a specific required/preferred skill, responsibility,
-  or matched/missing keyword — not just "included matched keywords").
+  job in one sentence (a specific responsibility or matched/missing/
+  keyword_evidence keyword — not just "included matched keywords").
   Distinguish precisely what kind of change this was:
     - reordering existing content needs no hedging: "Reordered technical
       skills to prioritize Python, React, and AWS."
@@ -367,6 +426,15 @@ class ResumeGenerationAgent:
         after_report = KeywordReport(
             matched=[*keyword_report.matched, *added_keywords],
             missing=[kw for kw in keyword_report.missing if kw not in added_keywords],
+            # Carries each originally-matched keyword's real evidence
+            # forward so the after-score still weights it by its true tier
+            # (e.g. a semantic match stays at 0.85, not bumped to full
+            # credit just because this is a new KeywordReport instance).
+            # added_keywords' own entries here still say "unsupported" (that
+            # was their pre-optimization classification) — compute_ats
+            # deliberately ignores non-"supported" entries for its
+            # full-credit fallback, so this doesn't penalize them.
+            evidence=keyword_report.evidence,
         )
         ats_score_after = compute_ats(after_report)
 
@@ -417,6 +485,13 @@ class ResumeGenerationAgent:
             "candidate_profile": ranked_profile,
             "matched_keywords": keyword_report.matched,
             "missing_keywords": keyword_report.missing,
+            # Per-keyword evidence tier (see schemas/resume.py::KeywordEvidence)
+            # — lets the model distinguish a matched_keyword that's already
+            # verbatim in the profile (evidence_type "exact", nothing to do)
+            # from one that's genuinely supported but not yet phrased using
+            # the employer's own term (evidence_type "alias"/"semantic"/
+            # "experience" — see the ATS keyword test's evidence rule below).
+            "keyword_evidence": [item.model_dump() for item in keyword_report.evidence],
             "editable_blocks": editable_blocks,
         })
         response = await self._client.aio.models.generate_content(
@@ -447,6 +522,13 @@ def _augment_with_inferred_keywords(keyword_report: KeywordReport, profile: dict
     test (see _SYSTEM_PROMPT's ATS keyword test) before being woven in;
     this function only ever adds to `missing`, never to `matched`, since
     nothing has actually been credited on the resume yet.
+
+    Also extends `evidence` with a real KeywordEvidence per inferred
+    keyword (via classify_keyword, the same engine every other keyword
+    goes through) — previously this function returned a fresh KeywordReport
+    without `evidence` at all, silently dropping match_keywords' evidence
+    list the moment any keyword got inferred, which would have made the
+    keyword_evidence payload sent to the optimizer incomplete.
     """
     job_terms_lower = {
         term.strip().lower()
@@ -464,7 +546,13 @@ def _augment_with_inferred_keywords(keyword_report: KeywordReport, profile: dict
     ]
     if not inferred:
         return keyword_report
-    return KeywordReport(matched=keyword_report.matched, missing=[*keyword_report.missing, *inferred])
+
+    inferred_evidence = [classify_keyword(keyword, profile) for keyword in inferred]
+    return KeywordReport(
+        matched=keyword_report.matched,
+        missing=[*keyword_report.missing, *inferred],
+        evidence=[*keyword_report.evidence, *inferred_evidence],
+    )
 
 
 def _job_cares_about(keyword: str, job_terms_lower: set[str]) -> bool:

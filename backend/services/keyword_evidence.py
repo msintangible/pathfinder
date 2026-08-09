@@ -1,11 +1,10 @@
 """
 Evidence-based keyword classification — the "why is this keyword matched or
-missing" record behind schemas/resume.py::KeywordEvidence.
-
-Deliberately not wired into keyword_matcher.match_keywords yet — this module
-is developed and tested standalone first (see the phased ATS-redesign plan);
-match_keywords keeps its existing exact-only behavior until a later phase
-rewires it to use classify_keyword.
+missing" record behind schemas/resume.py::KeywordEvidence. Wired into
+keyword_matcher.match_keywords, which is the sole caller: every job keyword
+is classified here first, and match_keywords' matched/missing split is
+derived from classify_keyword's status (anything but "unsupported" counts
+as matched).
 
 Safety model, same as inferable_keywords.py's existing precedent: every
 alias/category/activity relationship below is a hand-reviewed, closed list,
@@ -61,56 +60,100 @@ _ALIAS_GROUP_BY_TERM: dict[str, list[str]] = {
     term: group for group in TECH_ALIASES for term in group
 }
 
+# Each entry is (synonym keys, concrete member technologies). Multiple keys
+# per entry exist for the same reason TECH_ALIASES groups multiple spellings
+# together: a job posting phrases the same real-world category many ways
+# ("RDBMS" vs "relational database management systems" are literally the
+# same thing spelled two ways), and a keyword classifying as "unsupported"
+# purely because the posting used a different-but-equivalent phrasing than
+# our one curated key is a false negative, not a safety win. Adding a key
+# here must still satisfy the module docstring's IS-A rule — it only ever
+# widens which *phrasings* reach an already-approved category, never adds a
+# new category or member.
+_CATEGORY_GROUPS: list[tuple[list[str], list[str]]] = [
+    (
+        [
+            "relational databases", "relational database", "sql databases", "sql database",
+            "relational database systems", "relational database management systems", "rdbms", "sql",
+        ],
+        ["Azure SQL", "SQL Server", "MySQL", "PostgreSQL", "Oracle", "SQLite", "MariaDB", "Amazon RDS"],
+    ),
+    (
+        ["nosql databases", "nosql", "nosql database", "non-relational databases"],
+        ["MongoDB", "DynamoDB", "Firebase", "Redis", "Cassandra", "Cosmos DB"],
+    ),
+    (
+        ["cloud platforms", "cloud computing", "cloud services", "cloud technologies"],
+        ["AWS", "Azure", "Google Cloud", "GCP"],
+    ),
+    (
+        ["containerization", "container technologies", "containers"],
+        ["Docker", "Podman"],
+    ),
+    (
+        ["version control", "version control systems", "source control"],
+        ["Git", "GitHub", "GitLab", "Bitbucket", "SVN"],
+    ),
+    (
+        ["frontend frameworks", "front-end frameworks", "ui frameworks"],
+        ["React", "Angular", "Vue", "Vue.js", "Svelte"],
+    ),
+    (
+        ["javascript frameworks", "js frameworks"],
+        ["React", "Angular", "Vue", "Vue.js", "Svelte", "Next.js"],
+    ),
+    (
+        ["unit testing", "unit tests"],
+        ["Jest", "PyTest", "JUnit", "xUnit", "NUnit", "Mocha"],
+    ),
+]
+
 # category (lowercase) -> concrete member technologies (original casing, as
 # they'd appear in a profile) that genuinely satisfy it. See module
 # docstring for the IS-A rule that keeps this list safe.
 CATEGORY_MAP: dict[str, list[str]] = {
-    "relational databases": [
-        "Azure SQL", "SQL Server", "MySQL", "PostgreSQL", "Oracle", "SQLite", "MariaDB", "Amazon RDS",
-    ],
-    "relational database": [
-        "Azure SQL", "SQL Server", "MySQL", "PostgreSQL", "Oracle", "SQLite", "MariaDB", "Amazon RDS",
-    ],
-    "sql databases": ["Azure SQL", "SQL Server", "MySQL", "PostgreSQL", "Oracle", "SQLite", "MariaDB"],
-    "rdbms": ["Azure SQL", "SQL Server", "MySQL", "PostgreSQL", "Oracle", "SQLite", "MariaDB"],
-    # Bare "SQL" is commonly shorthand for "a SQL/relational database" in job
-    # postings — same member list as relational databases above.
-    "sql": ["Azure SQL", "SQL Server", "MySQL", "PostgreSQL", "Oracle", "SQLite", "MariaDB", "Amazon RDS"],
-    "nosql databases": ["MongoDB", "DynamoDB", "Firebase", "Redis", "Cassandra", "Cosmos DB"],
-    "nosql": ["MongoDB", "DynamoDB", "Firebase", "Redis", "Cassandra", "Cosmos DB"],
-    "cloud platforms": ["AWS", "Azure", "Google Cloud", "GCP"],
-    "cloud computing": ["AWS", "Azure", "Google Cloud", "GCP"],
-    "containerization": ["Docker", "Podman"],
-    "version control": ["Git", "GitHub", "GitLab", "Bitbucket", "SVN"],
-    "version control systems": ["Git", "GitHub", "GitLab", "Bitbucket", "SVN"],
-    "frontend frameworks": ["React", "Angular", "Vue", "Vue.js", "Svelte"],
-    "javascript frameworks": ["React", "Angular", "Vue", "Vue.js", "Svelte", "Next.js"],
-    "unit testing": ["Jest", "PyTest", "JUnit", "xUnit", "NUnit", "Mocha"],
+    key: members for keys, members in _CATEGORY_GROUPS for key in keys
 }
 
-# Curated 1-2 word activity/practice phrases — deliberately NOT run through
-# the generic 3+-significant-word text-overlap check below (too short to be
-# safe there, per keyword_matcher._keyword_appears_in's own reasoning), but
-# common enough in job postings to be worth a specific, reviewed trigger
-# list, the same pattern inferable_keywords.py already uses. Every trigger
-# is checked against the candidate's own real bullet/description text, not
-# just skill tags — this is about demonstrated practice, not a tool name.
+# Curated activity/practice phrases — deliberately NOT run through the
+# generic 3+-significant-word text-overlap check below (too short/variable
+# to be safe there, per keyword_matcher._keyword_appears_in's own
+# reasoning), but common enough in job postings to be worth a specific,
+# reviewed trigger list, the same pattern inferable_keywords.py already
+# uses. Every trigger is checked against the candidate's own real
+# bullet/description text, not just skill tags — this is about demonstrated
+# practice, not a tool name.
+#
+# As with _CATEGORY_GROUPS above, each entry lists every reviewed phrasing
+# of the SAME underlying activity a job posting might use ("API design" and
+# "building APIs" both mean "has developed APIs") — widening recognized
+# phrasing, not the underlying claim being made.
+_ACTIVITY_GROUPS: list[tuple[list[str], list[str]]] = [
+    (
+        [
+            "api development", "building apis", "developing apis", "designing apis",
+            "api design", "rest api development", "restful api development", "web api development",
+        ],
+        [
+            "rest api", "restful api", "api endpoint", "built api", "built rest",
+            "developed api", "designed api", "fastapi", "asp.net", "express", "flask", "graphql", "web api",
+        ],
+    ),
+    (
+        ["software design", "system design", "software architecture design"],
+        ["architecture", "system design", "design pattern", "designed a", "software architecture", "clean architecture"],
+    ),
+    (
+        ["software engineering principles", "software engineering", "software engineering best practices"],
+        [
+            "clean architecture", "solid principles", "design pattern", "best practices",
+            "software architecture", "code review", "unit test",
+        ],
+    ),
+]
+
 ACTIVITY_PHRASES: dict[str, list[str]] = {
-    "api development": [
-        "rest api", "restful api", "api endpoint", "built api", "built rest",
-        "developed api", "designed api", "fastapi", "asp.net", "express", "flask", "graphql", "web api",
-    ],
-    "software design": [
-        "architecture", "system design", "design pattern", "designed a", "software architecture", "clean architecture",
-    ],
-    "software engineering principles": [
-        "clean architecture", "solid principles", "design pattern", "best practices",
-        "software architecture", "code review", "unit test",
-    ],
-    "software engineering": [
-        "clean architecture", "solid principles", "design pattern", "best practices",
-        "software architecture", "code review", "unit test",
-    ],
+    key: triggers for keys, triggers in _ACTIVITY_GROUPS for key in keys
 }
 
 # Per-tier confidence — fixed constants, not a per-instance guess, so the
@@ -145,14 +188,14 @@ def classify_keyword(keyword: str, profile: dict) -> KeywordEvidence:
     """Classify one job keyword's support level against a candidate profile. See KeywordEvidence's docstring for the tier definitions."""
     normalized = keyword.strip().lower()
     if not normalized:
-        return KeywordEvidence(keyword=keyword, status="unsupported", confidence=0.0, evidence=[])
+        return KeywordEvidence(keyword=keyword, status="unsupported", evidence_type="none", confidence=0.0, evidence=[])
 
     profile_terms = _profile_skill_terms(profile)
 
     # Tier 1 — exact
     if normalized in profile_terms:
         return KeywordEvidence(
-            keyword=keyword, status="exact", confidence=_CONFIDENCE["exact"],
+            keyword=keyword, status="supported", evidence_type="exact", confidence=_CONFIDENCE["exact"],
             evidence=[profile_terms[normalized]],
         )
 
@@ -162,7 +205,8 @@ def classify_keyword(keyword: str, profile: dict) -> KeywordEvidence:
         found = [profile_terms[term] for term in alias_group if term in profile_terms]
         if found:
             return KeywordEvidence(
-                keyword=keyword, status="alias", confidence=_CONFIDENCE["alias"], evidence=found,
+                keyword=keyword, status="supported", evidence_type="alias",
+                confidence=_CONFIDENCE["alias"], evidence=found,
             )
 
     # Tier 3 — semantic/category
@@ -171,7 +215,8 @@ def classify_keyword(keyword: str, profile: dict) -> KeywordEvidence:
         found = [profile_terms[m.lower()] for m in members if m.lower() in profile_terms]
         if found:
             return KeywordEvidence(
-                keyword=keyword, status="semantic", confidence=_CONFIDENCE["semantic"], evidence=found,
+                keyword=keyword, status="supported", evidence_type="semantic",
+                confidence=_CONFIDENCE["semantic"], evidence=found,
             )
 
     # Tier 4 — experience (curated activity phrase, or generic 3+-word text overlap)
@@ -182,7 +227,7 @@ def classify_keyword(keyword: str, profile: dict) -> KeywordEvidence:
         found_triggers = [t for t in triggers if t in profile_text]
         if found_triggers:
             return KeywordEvidence(
-                keyword=keyword, status="experience",
+                keyword=keyword, status="supported", evidence_type="experience",
                 confidence=_CONFIDENCE["experience_curated"], evidence=found_triggers,
             )
     else:
@@ -192,11 +237,11 @@ def classify_keyword(keyword: str, profile: dict) -> KeywordEvidence:
             present = [word for word in words if _word_present(word, haystack_tokens)]
             if len(present) >= len(words) - 1:
                 return KeywordEvidence(
-                    keyword=keyword, status="experience",
+                    keyword=keyword, status="supported", evidence_type="experience",
                     confidence=_CONFIDENCE["experience_generic"], evidence=present,
                 )
 
-    return KeywordEvidence(keyword=keyword, status="unsupported", confidence=0.0, evidence=[])
+    return KeywordEvidence(keyword=keyword, status="unsupported", evidence_type="none", confidence=0.0, evidence=[])
 
 
 def classify_keywords(keywords: list[str], profile: dict) -> list[KeywordEvidence]:

@@ -1,12 +1,18 @@
+import asyncio
 import os
 import re
 
 import httpx
 
 from schemas.profile import RawGitHubRepo
+from services.text_utils import truncate_text
 
 _GITHUB_API = "https://api.github.com"
 _MAX_REPOS = 10
+# Keeps the extraction prompt bounded even with up to _MAX_REPOS READMEs
+# attached — most READMEs' problem/architecture/impact framing lives in the
+# intro and feature list, well within this budget.
+_MAX_README_CHARS = 2000
 _USERNAME_RE = re.compile(r"github\.com/([A-Za-z0-9-]+)")
 
 
@@ -21,7 +27,7 @@ def _profile_text(user: dict) -> str | None:
     return " · ".join(parts) if parts else None
 
 
-def _to_repo(raw: dict) -> RawGitHubRepo | None:
+def _to_repo(raw: dict, readme: str | None) -> RawGitHubRepo | None:
     if not raw.get("name"):
         return None
     return RawGitHubRepo(
@@ -29,19 +35,47 @@ def _to_repo(raw: dict) -> RawGitHubRepo | None:
         description=raw.get("description"),
         languages=[raw["language"]] if raw.get("language") else [],
         topics=raw.get("topics") or [],
-        readme=None,  # skipped in v1 to bound API calls against the unauthenticated rate limit
+        readme=readme,
         url=raw.get("html_url"),
         stars=raw.get("stargazers_count"),
     )
 
 
+async def _fetch_readme(client: httpx.AsyncClient, raw: dict) -> str | None:
+    """
+    Fetch a repo's README as truncated raw text — mined by
+    CandidateProfileAgent for richer project evidence (architecture,
+    technical_achievements, impact, deployment — see schemas/profile.py's
+    Project) beyond the bare name/description/topics already fetched. None
+    if the repo has no full_name, has no README, or the request fails for
+    any reason — never raises, same contract as fetch_github_profile itself.
+    The vnd.github.raw+json media type returns the file's raw text directly
+    instead of a JSON envelope with base64-encoded content.
+    """
+    full_name = raw.get("full_name")
+    if not full_name:
+        return None
+    try:
+        resp = await client.get(
+            f"{_GITHUB_API}/repos/{full_name}/readme",
+            headers={"Accept": "application/vnd.github.raw+json"},
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError:
+        return None
+    return truncate_text(resp.text, _MAX_README_CHARS, "\n[... README truncated]") or None
+
+
 async def fetch_github_profile(github_url: str | None) -> tuple[str | None, list[RawGitHubRepo]]:
     """
-    Fetch a public GitHub profile (bio) + top repos by star count.
+    Fetch a public GitHub profile (bio) + top repos by star count, including
+    each repo's README (fetched concurrently to keep latency close to a
+    single round-trip despite up to _MAX_REPOS extra calls).
 
     Never raises — a bad URL, a private/nonexistent user, a rate limit, or a
     network error all degrade to (None, []) so a flaky GitHub API never blocks
-    CV import.
+    CV import. A single repo's README failing is handled separately inside
+    _fetch_readme, so one broken README never drops the whole repo.
     """
     username = extract_username(github_url) if github_url else None
     if not username:
@@ -61,15 +95,17 @@ async def fetch_github_profile(github_url: str | None) -> tuple[str | None, list
                 params={"sort": "updated", "per_page": 100, "type": "owner"},
             )
             repos_resp.raise_for_status()
+
+            profile_text = _profile_text(user_resp.json())
+
+            repos_json = repos_resp.json()
+            if not isinstance(repos_json, list):
+                return profile_text, []
+
+            top = sorted(repos_json, key=lambda r: r.get("stargazers_count") or 0, reverse=True)[:_MAX_REPOS]
+            readmes = await asyncio.gather(*[_fetch_readme(client, raw) for raw in top])
     except (httpx.HTTPError, ValueError):
         return None, []
 
-    profile_text = _profile_text(user_resp.json())
-
-    repos_json = repos_resp.json()
-    if not isinstance(repos_json, list):
-        return profile_text, []
-
-    top = sorted(repos_json, key=lambda r: r.get("stargazers_count") or 0, reverse=True)[:_MAX_REPOS]
-    repos = [repo for raw in top if (repo := _to_repo(raw)) is not None]
+    repos = [repo for raw, readme in zip(top, readmes) if (repo := _to_repo(raw, readme)) is not None]
     return profile_text, repos

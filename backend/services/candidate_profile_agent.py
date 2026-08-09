@@ -33,14 +33,33 @@ Rules:
   for anything shaped like a phone number, the same care you'd give to
   finding an email address, before concluding "phone": null. Don't require
   an explicit "Phone:" label to find one.
+- For each project, separate its evidence into distinct facts instead of
+  one flattened description: "problem" (what need/challenge it addressed),
+  "solution" (what was actually built to address it, 1-2 sentences),
+  "architecture" (real technical components/design decisions — e.g. "FastAPI
+  WebSocket backend", "multi-stage LLM pipeline"), "responsibilities" (what
+  the candidate specifically owned — most useful for a team/hackathon
+  project; omit for a solo project where it would just restate "solution"),
+  "technical_achievements" (a specific engineering win or hard problem
+  solved — a technique, an optimization, a validation approach), "impact"
+  (a measurable outcome: an award, a metric, adoption, deployment reach),
+  and "deployment" (where it actually runs, e.g. "Azure", "Vercel" — only
+  if genuinely stated, never inferred from the tech stack alone). Every
+  field is a fact that must actually be present in the source text — leave
+  it null/[] rather than inferring or padding it, the same rule as every
+  other field in this schema. notable_achievements remains the catch-all
+  for genuine detail that doesn't cleanly fit one of these more specific
+  buckets.
 - For each project, if one of the input's github_repositories is clearly
   the same project (matching or near-matching name, or the project's
   description references the same subject matter as a repo's description/
-  README), mine that repo's README for 1-2 additional genuine
-  notable_achievements not already captured in the project's own
-  description — a specific technical approach, a concrete outcome, a
-  detail about how it works. Only pull details that are actually stated in
-  the README; never pad with a rephrasing of something already captured.
+  README), mine that repo's README for genuine additional detail and route
+  it into the specific field it actually describes — a design decision into
+  "architecture", a hard problem solved into "technical_achievements", a
+  measurable outcome into "impact", a hosting detail into "deployment" —
+  rather than dumping everything into notable_achievements. Only pull
+  details that are actually stated in the README; never pad with a
+  rephrasing of something already captured elsewhere in the same project.
 - If a project or work_experience entry's source text describes multiple
   distinct facts or outcomes run together in one dense paragraph, split
   them into separate bullets/notable_achievements — one fact per entry —
@@ -154,7 +173,14 @@ Schema:
       "url": string or null,
       "technologies": [string],
       "skills_demonstrated": [string],
-      "notable_achievements": [string]
+      "notable_achievements": [string],
+      "problem": string or null,
+      "solution": string or null,
+      "architecture": [string],
+      "responsibilities": [string],
+      "technical_achievements": [string],
+      "impact": [string],
+      "deployment": [string]
     }
   ],
   "github_repositories": [

@@ -186,6 +186,19 @@ def test_keeps_a_keyword_backed_by_a_project_technology():
     assert backed == ["Terraform"]
 
 
+def test_keeps_a_keyword_backed_by_structured_project_evidence():
+    """The Projects-redesign Phase A fields (problem/solution/architecture/
+    responsibilities/technical_achievements/impact/deployment) must feed
+    the same evidence corpus as description/technologies/notable_achievements
+    — otherwise a keyword only backed by one of these richer fields would be
+    wrongly flagged as an unbacked/fabricated addition."""
+    profile = {"projects": [{"technical_achievements": ["Sub-second transcription latency using WebSockets"]}]}
+
+    backed = filter_backed_keywords(profile, ["WebSockets"])
+
+    assert backed == ["WebSockets"]
+
+
 def test_keeps_a_keyword_backed_by_a_github_repo():
     profile = {"github_repositories": [{"description": "A tool built with Kubernetes."}]}
 

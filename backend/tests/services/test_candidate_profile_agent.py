@@ -79,6 +79,13 @@ _FULL_PROFILE = {
             "technologies": ["Python", "FastAPI", "React"],
             "skills_demonstrated": ["full-stack development", "AI integration"],
             "notable_achievements": ["500 GitHub stars"],
+            "problem": "Job applicants struggle to tailor resumes to each posting.",
+            "solution": "Built an AI agent that matches resume content to job requirements.",
+            "architecture": ["FastAPI backend", "React frontend", "LLM-based matching pipeline"],
+            "responsibilities": ["Backend architecture", "LLM integration"],
+            "technical_achievements": ["Deterministic keyword-evidence matching engine"],
+            "impact": ["500 GitHub stars"],
+            "deployment": ["Azure"],
         }
     ],
     "github_repositories": [
@@ -197,6 +204,24 @@ async def test_extracts_work_experience(mock_genai):
     assert job["company"] == "Acme Corp"
     assert job["current"] is True
     assert "Led migration of monolith to microservices" in job["bullets"]
+
+
+@pytest.mark.anyio
+async def test_extracts_structured_project_evidence(mock_genai):
+    """The Projects-redesign Phase A fields must round-trip through
+    CandidateProfile validation, not just the pre-existing flat fields."""
+    mock_genai.aio.models.generate_content.return_value = _make_response(_FULL_PROFILE)
+
+    result = await CandidateProfileAgent().analyze(CandidateProfileInput(resume_text="..."))
+
+    project = result["projects"][0]
+    assert project["problem"] == "Job applicants struggle to tailor resumes to each posting."
+    assert project["solution"] == "Built an AI agent that matches resume content to job requirements."
+    assert "FastAPI backend" in project["architecture"]
+    assert "Backend architecture" in project["responsibilities"]
+    assert "Deterministic keyword-evidence matching engine" in project["technical_achievements"]
+    assert "500 GitHub stars" in project["impact"]
+    assert project["deployment"] == ["Azure"]
 
 
 @pytest.mark.anyio
@@ -436,9 +461,29 @@ def test_prompt_instructs_mining_matching_github_repos_for_project_detail():
     """Regression guard: a project's README-backed GitHub repo often has more
     real detail than the CV's own terse description — a future prompt edit
     must not silently drop the instruction to mine it for extra genuine
-    notable_achievements instead of leaving that detail unused."""
+    detail, routed into the specific structured field it describes (not
+    dumped into notable_achievements) — see the Projects-redesign Phase A
+    fields (architecture/technical_achievements/impact/deployment)."""
     normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
-    assert "mine that repo's README for 1-2 additional genuine" in normalized_prompt
+    assert "mine that repo's README for genuine additional detail" in normalized_prompt
+    assert "rather than dumping everything into notable_achievements" in normalized_prompt
+
+
+def test_prompt_instructs_separating_project_evidence_into_structured_fields():
+    """Regression guard: the Projects-redesign (Phase A) added problem/
+    solution/architecture/responsibilities/technical_achievements/impact/
+    deployment fields specifically so the resume generation agent has
+    distinct, purposeful facts per project instead of one flat description
+    — a future prompt edit must not silently drop the extraction instruction
+    that actually populates them, leaving the schema fields permanently
+    empty."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    for field_name in (
+        '"problem"', '"solution"', '"architecture"', '"responsibilities"',
+        '"technical_achievements"', '"impact"', '"deployment"',
+    ):
+        assert field_name in normalized_prompt
+    assert "leave it null/[] rather than inferring or padding it" in normalized_prompt
 
 
 def test_prompt_instructs_splitting_dense_paragraphs_into_separate_bullets():

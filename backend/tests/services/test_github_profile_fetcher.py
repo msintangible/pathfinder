@@ -130,3 +130,99 @@ async def test_malformed_repos_response_returns_profile_only(mock_client):
 
     assert profile_text == "Someone"
     assert repos == []
+
+
+# ---------------------------------------------------------------------------
+# README fetching (Phase B of the Projects redesign)
+# ---------------------------------------------------------------------------
+
+def _readme_response(text, status_code=200):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.text = text
+    if status_code >= 400:
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "error", request=MagicMock(), response=resp
+        )
+    return resp
+
+
+@pytest.mark.anyio
+async def test_fetches_readme_when_full_name_present(mock_client):
+    user = {"name": "Someone"}
+    repos = [{
+        "name": "distill", "full_name": "someone/distill", "stargazers_count": 5,
+        "html_url": None, "topics": [],
+    }]
+    mock_client.get.side_effect = [
+        _response(user), _response(repos), _readme_response("# distill\nAn AI meeting tool."),
+    ]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert result_repos[0].readme == "# distill\nAn AI meeting tool."
+
+
+@pytest.mark.anyio
+async def test_skips_readme_fetch_when_full_name_missing(mock_client):
+    user = {"name": "Someone"}
+    repos = [{"name": "distill", "stargazers_count": 5, "html_url": None, "topics": []}]
+    mock_client.get.side_effect = [_response(user), _response(repos)]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert result_repos[0].readme is None
+    assert mock_client.get.call_count == 2  # no third call attempted
+
+
+@pytest.mark.anyio
+async def test_readme_fetch_failure_does_not_drop_the_repo(mock_client):
+    """A repo with no README (404) or a flaky README request must not take
+    the whole repo down with it — same 'never raises' contract as the rest
+    of this module, just scoped to one repo instead of the whole fetch."""
+    user = {"name": "Someone"}
+    repos = [{
+        "name": "distill", "full_name": "someone/distill", "stargazers_count": 5,
+        "html_url": None, "topics": [],
+    }]
+    mock_client.get.side_effect = [_response(user), _response(repos), _readme_response("", status_code=404)]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert len(result_repos) == 1
+    assert result_repos[0].name == "distill"
+    assert result_repos[0].readme is None
+
+
+@pytest.mark.anyio
+async def test_readme_is_truncated_to_the_configured_limit(mock_client):
+    user = {"name": "Someone"}
+    repos = [{
+        "name": "distill", "full_name": "someone/distill", "stargazers_count": 5,
+        "html_url": None, "topics": [],
+    }]
+    long_readme = "word " * 2000  # well past _MAX_README_CHARS
+    mock_client.get.side_effect = [_response(user), _response(repos), _readme_response(long_readme)]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert len(result_repos[0].readme) < len(long_readme)
+    assert result_repos[0].readme.endswith("[... README truncated]")
+
+
+@pytest.mark.anyio
+async def test_fetches_readmes_for_multiple_repos_matching_each_to_its_own_repo(mock_client):
+    user = {"name": "Someone"}
+    repos = [
+        {"name": "distill", "full_name": "someone/distill", "stargazers_count": 10, "html_url": None, "topics": []},
+        {"name": "budget-wars", "full_name": "someone/budget-wars", "stargazers_count": 5, "html_url": None, "topics": []},
+    ]
+    mock_client.get.side_effect = [
+        _response(user), _response(repos),
+        _readme_response("distill readme"), _readme_response("budget-wars readme"),
+    ]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    readme_by_name = {repo.name: repo.readme for repo in result_repos}
+    assert readme_by_name == {"distill": "distill readme", "budget-wars": "budget-wars readme"}

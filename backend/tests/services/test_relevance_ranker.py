@@ -1,3 +1,4 @@
+from services.keyword_evidence import classify_keyword
 from services.keyword_matcher import KeywordReport
 from services.relevance_ranker import rank_profile
 
@@ -147,6 +148,106 @@ def test_ranking_reasons_empty_for_missing_sections():
     assert ranked.ranking_reasons["work_experience"] == []
     assert ranked.ranking_reasons["projects"] == []
     assert ranked.ranking_reasons["github_repositories"] == []
+
+
+# ---------------------------------------------------------------------------
+# Multi-criteria project ranking (Phase C of the Projects redesign):
+# keyword-evidence coverage, technical depth, impact, and category diversity.
+# ---------------------------------------------------------------------------
+
+def test_ranks_project_higher_via_semantic_keyword_evidence():
+    """A project's real technologies satisfying a semantic-tier job keyword
+    (e.g. "relational databases" via "Azure SQL") must credit the project
+    even without the literal job phrase anywhere in its own tags — the
+    whole point of routing project ranking through the keyword_evidence
+    engine instead of literal tag overlap alone."""
+    profile = {
+        "databases": ["Azure SQL", "SQL Server"],
+        "projects": [
+            {"name": "No DB experience", "technologies": ["React"]},
+            {"name": "Has DB experience", "technologies": ["Azure SQL", "SQL Server"]},
+        ],
+    }
+    evidence = [classify_keyword("relational databases", profile)]
+    report = KeywordReport(matched=["relational databases"], missing=[], evidence=evidence)
+
+    ranked = rank_profile(profile, report)
+
+    assert ranked.profile["projects"][0]["name"] == "Has DB experience"
+    assert "relational databases" in ranked.ranking_reasons["projects"][0]
+
+
+def test_ranks_project_higher_for_technical_depth_when_keyword_coverage_ties():
+    profile = {
+        "projects": [
+            {"name": "Shallow", "technologies": ["Python"]},
+            {
+                "name": "Deep", "technologies": ["Python"],
+                "architecture": ["FastAPI WebSocket backend"],
+                "responsibilities": ["Backend architecture"],
+                "technical_achievements": ["Sub-second latency"],
+            },
+        ],
+    }
+    report = KeywordReport(matched=["Python"], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    assert ranked.profile["projects"][0]["name"] == "Deep"
+
+
+def test_ranks_project_higher_for_measurable_impact_when_otherwise_tied():
+    profile = {
+        "projects": [
+            {"name": "No impact", "technologies": ["Python"]},
+            {"name": "Has impact", "technologies": ["Python"], "impact": ["Won 1st place at HackBelfast 2026"]},
+        ],
+    }
+    report = KeywordReport(matched=["Python"], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    assert ranked.profile["projects"][0]["name"] == "Has impact"
+
+
+def test_diversifies_project_categories_when_scores_are_close():
+    profile = {
+        "projects": [
+            {"name": "Backend A", "technologies": ["FastAPI", "PostgreSQL"]},
+            {"name": "Backend B", "technologies": ["FastAPI"]},
+            {"name": "Backend C", "technologies": ["FastAPI"]},
+            {"name": "Data project", "technologies": ["XGBoost"]},
+        ],
+    }
+    report = KeywordReport(matched=["FastAPI", "PostgreSQL", "XGBoost"], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    names = [p["name"] for p in ranked.profile["projects"]]
+    assert len(names) == 3
+    assert "Backend A" in names  # clearly strongest — always kept
+    assert "Data project" in names  # diversified in ahead of a tied same-category project
+    assert "Backend C" not in names
+
+
+def test_diversity_does_not_sacrifice_a_much_stronger_same_category_project():
+    """A different-category project with a near-zero score must not bump a
+    genuinely stronger same-category project — diversity is a tie-breaker
+    preference, not a quota that overrides quality."""
+    profile = {
+        "projects": [
+            {"name": "Strong Backend", "technologies": ["FastAPI", "PostgreSQL", "Docker"]},
+            {"name": "Solid Backend", "technologies": ["FastAPI", "PostgreSQL"]},
+            {"name": "Weak Backend", "technologies": ["FastAPI"]},
+            {"name": "Tiny Data project", "technologies": []},
+        ],
+    }
+    report = KeywordReport(matched=["FastAPI", "PostgreSQL", "Docker"], missing=[])
+
+    ranked = rank_profile(profile, report)
+
+    names = [p["name"] for p in ranked.profile["projects"]]
+    assert names == ["Strong Backend", "Solid Backend", "Weak Backend"]
 
 
 def test_source_indices_stay_aligned_with_ranked_profile_entries():

@@ -75,6 +75,13 @@ def _flatten_profile_text(profile: dict) -> str:
     for project in profile.get("projects") or []:
         parts.append(project.get("description") or "")
         parts.extend(project.get("notable_achievements") or [])
+        parts.append(project.get("problem") or "")
+        parts.append(project.get("solution") or "")
+        parts.extend(project.get("architecture") or [])
+        parts.extend(project.get("responsibilities") or [])
+        parts.extend(project.get("technical_achievements") or [])
+        parts.extend(project.get("impact") or [])
+        parts.extend(project.get("deployment") or [])
     for repo in profile.get("github_repositories") or []:
         parts.append(repo.get("description") or "")
         parts.append(repo.get("purpose") or "")

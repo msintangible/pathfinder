@@ -80,6 +80,73 @@ def test_build_creates_one_block_per_project_achievement():
     assert _block_by_id(layout, "projects[0].achievements[1]").text == "Featured on HN"
 
 
+# ---------------------------------------------------------------------------
+# Purpose-driven project bullets (Phase D of the Projects redesign)
+# ---------------------------------------------------------------------------
+
+def test_build_creates_blank_canvas_purpose_blocks_when_structured_evidence_exists():
+    profile = {"projects": [{
+        "name": "distill", "description": "AI meeting tool.",
+        "architecture": ["FastAPI WebSocket backend"],
+        "technical_achievements": ["Sub-second transcription latency"],
+        "impact": ["Won Best Use of ElevenLabs at HackBelfast 2026"],
+    }]}
+
+    layout = build_synthetic_layout(profile)
+
+    assert _block_by_id(layout, "projects[0].architecture_bullet").text == ""
+    assert _block_by_id(layout, "projects[0].technical_achievement_bullet").text == ""
+    assert _block_by_id(layout, "projects[0].impact_bullet").text == ""
+
+
+def test_build_only_creates_purpose_blocks_for_fields_with_real_evidence():
+    """A project with only technical_achievements populated must not get an
+    architecture_bullet or impact_bullet block — never force a bullet slot
+    the LLM would have to pad with filler."""
+    profile = {"projects": [{"name": "x", "technical_achievements": ["Optimized query performance"]}]}
+
+    layout = build_synthetic_layout(profile)
+    block_ids = {block.block_id for section in layout.sections for block in section.blocks}
+
+    assert "projects[0].technical_achievement_bullet" in block_ids
+    assert "projects[0].architecture_bullet" not in block_ids
+    assert "projects[0].impact_bullet" not in block_ids
+
+
+def test_build_falls_back_to_notable_achievements_when_no_structured_fields_exist():
+    """A project extracted before Phase A (no architecture/technical_achievements/
+    impact populated) must render exactly like before — legacy
+    notable_achievements-driven achievement blocks, no purpose blocks."""
+    profile = {"projects": [{"name": "x", "notable_achievements": ["500 stars"]}]}
+
+    layout = build_synthetic_layout(profile)
+    block_ids = {block.block_id for section in layout.sections for block in section.blocks}
+
+    assert "projects[0].achievements[0]" in block_ids
+    assert not any(b.endswith("_bullet") for b in block_ids)
+
+
+def test_build_fills_remaining_slots_with_achievements_when_purpose_fields_are_sparse():
+    """Only 1 of the 3 purpose fields populated leaves 2 slots — real
+    notable_achievements content should fill them rather than being
+    silently dropped, up to the shared 3-extra-bullet cap."""
+    profile = {"projects": [{
+        "name": "x",
+        "technical_achievements": ["Optimized query performance"],
+        "notable_achievements": ["500 stars", "Featured on HN", "1000 downloads"],
+    }]}
+
+    layout = build_synthetic_layout(profile)
+    block_ids = {block.block_id for section in layout.sections for block in section.blocks}
+
+    assert "projects[0].technical_achievement_bullet" in block_ids
+    assert "projects[0].achievements[0]" in block_ids
+    assert "projects[0].achievements[1]" in block_ids
+    # Cap is 3 extra bullets total: 1 purpose block + 2 achievements, third dropped.
+    assert "projects[0].achievements[2]" not in block_ids
+    assert _block_by_id(layout, "projects[0].achievements[0]").text == "500 stars"
+
+
 def test_build_creates_no_blocks_for_empty_experience_and_projects():
     layout = build_synthetic_layout({"headline": None, "summary": None})
     block_ids = {block.block_id for section in layout.sections for block in section.blocks}
@@ -156,6 +223,40 @@ def test_flatten_reflects_patched_project_achievement_text():
     resume = flatten_layout_to_resume(profile, layout)
 
     assert resume["projects"][0]["bullets"] == ["Job assistant", "500 GitHub stars and 50 forks"]
+
+
+def test_flatten_reflects_patched_purpose_bullet_text():
+    profile = {"projects": [{
+        "name": "distill", "description": "AI meeting tool.",
+        "architecture": ["FastAPI WebSocket backend"],
+        "impact": ["Won Best Use of ElevenLabs at HackBelfast 2026"],
+    }]}
+    layout = build_synthetic_layout(profile)
+    _block_by_id(layout, "projects[0].architecture_bullet").text = (
+        "Designed a real-time FastAPI WebSocket architecture for live audio processing."
+    )
+    _block_by_id(layout, "projects[0].impact_bullet").text = (
+        "Won Best Use of ElevenLabs at HackBelfast 2026."
+    )
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["projects"][0]["bullets"] == [
+        "AI meeting tool.",
+        "Designed a real-time FastAPI WebSocket architecture for live audio processing.",
+        "Won Best Use of ElevenLabs at HackBelfast 2026.",
+    ]
+
+
+def test_flatten_omits_an_unpatched_blank_purpose_bullet():
+    """A purpose block that never got patched (e.g. the model left it blank
+    despite the block existing) must not render as an empty bullet string."""
+    profile = {"projects": [{"name": "x", "description": "A tool.", "impact": ["Won an award"]}]}
+    layout = build_synthetic_layout(profile)
+
+    resume = flatten_layout_to_resume(profile, layout)
+
+    assert resume["projects"][0]["bullets"] == ["A tool."]
 
 
 def test_flatten_handles_profiles_with_no_experience_or_projects():

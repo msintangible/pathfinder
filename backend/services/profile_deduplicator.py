@@ -65,8 +65,11 @@ def dedupe_profile(profile: dict) -> dict:
     profile["projects"] = _dedupe_entries(
         profile.get("projects") or [],
         key_fields=("name",),
-        list_fields=("technologies", "skills_demonstrated", "notable_achievements"),
-        text_fields=("description",),
+        list_fields=(
+            "technologies", "skills_demonstrated", "notable_achievements",
+            "architecture", "responsibilities", "technical_achievements", "impact", "deployment",
+        ),
+        text_fields=("description", "problem", "solution"),
     )
     profile["projects"] = [
         {

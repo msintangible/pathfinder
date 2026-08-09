@@ -39,6 +39,22 @@ def test_infers_from_project_description_and_achievements():
     assert "API Development" in result
 
 
+def test_infers_from_structured_project_evidence_fields():
+    """The Projects-redesign Phase A fields (architecture/responsibilities/
+    technical_achievements/impact/deployment) must be searchable evidence
+    text too, not just description/notable_achievements — otherwise richer
+    project extraction wouldn't actually make more keywords inferable."""
+    profile = {"projects": [{
+        "architecture": ["FastAPI WebSocket backend"],
+        "technical_achievements": ["Wrote integration tests for the transcription pipeline"],
+    }]}
+
+    result = infer_available_keywords(profile)
+
+    assert "API Development" in result
+    assert "Testing & Debugging" in result
+
+
 def test_infers_from_github_repo_description():
     profile = {"github_repositories": [{"description": "A REST API with full test coverage", "purpose": None}]}
 

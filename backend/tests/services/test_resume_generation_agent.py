@@ -317,6 +317,45 @@ async def test_report_detects_skills_reordering(mock_genai):
 
 
 @pytest.mark.anyio
+async def test_purpose_driven_project_blocks_flow_through_to_bullets(mock_genai):
+    """End-to-end check that the Phase D purpose blocks (architecture_bullet/
+    impact_bullet) sent in editable_blocks actually reach the final
+    optimized_resume's project bullets once patched, in order after
+    description."""
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [],
+        "projects": [{
+            "name": "distill", "description": "AI meeting tool.",
+            "architecture": ["FastAPI WebSocket backend"],
+            "impact": ["Won Best Use of ElevenLabs at HackBelfast 2026"],
+        }],
+    }
+    job = {"skills": ["Python"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response({
+        "patches": [
+            {"block_id": "headline", "new_text": ""},
+            {"block_id": "summary", "new_text": ""},
+            {"block_id": "skills", "new_text": "Python"},
+            {"block_id": "projects[0].description", "new_text": "Built an AI-powered meeting tool."},
+            {"block_id": "projects[0].technologies", "new_text": ""},
+            {"block_id": "projects[0].architecture_bullet",
+             "new_text": "Designed a real-time FastAPI WebSocket architecture."},
+            {"block_id": "projects[0].impact_bullet",
+             "new_text": "Won Best Use of ElevenLabs at HackBelfast 2026."},
+        ],
+    })
+
+    result = await ResumeGenerationAgent().generate(profile, job)
+
+    assert result["optimized_resume"]["projects"][0]["bullets"] == [
+        "Built an AI-powered meeting tool.",
+        "Designed a real-time FastAPI WebSocket architecture.",
+        "Won Best Use of ElevenLabs at HackBelfast 2026.",
+    ]
+
+
+@pytest.mark.anyio
 async def test_report_includes_project_ranking_reasons(mock_genai):
     profile = {
         "technical_skills": ["Python"],
@@ -453,6 +492,38 @@ async def test_inferred_keyword_omitted_when_no_evidence_exists(mock_genai):
     assert "Agile Software Development" not in result["missing_keywords"]
 
 
+@pytest.mark.anyio
+async def test_inferred_keyword_gets_its_own_evidence_entry_in_the_payload(mock_genai):
+    """Regression guard: _augment_with_inferred_keywords used to return a
+    fresh KeywordReport without `evidence` at all once it added an inferred
+    keyword — silently dropping match_keywords' whole evidence list, which
+    would have made the keyword_evidence payload sent to the model
+    incomplete for every job that triggers an inference. Both the original
+    job keyword's evidence and the inferred keyword's own evidence must
+    reach the model."""
+    profile = {
+        "technical_skills": ["Python"],
+        "work_experience": [
+            {
+                "title": "Engineer", "company": "Acme",
+                "bullets": ["Delivered features in two-week agile sprints using Python"],
+                "technologies": ["Python"],
+            }
+        ],
+        "projects": [],
+    }
+    job = {"skills": ["Python", "Agile"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
+
+    await ResumeGenerationAgent().generate(profile, job)
+
+    contents = json.loads(mock_genai.aio.models.generate_content.call_args.kwargs["contents"])
+    keywords_with_evidence = {item["keyword"] for item in contents["keyword_evidence"]}
+    assert "Python" in keywords_with_evidence
+    assert "Agile" in keywords_with_evidence
+    assert "Agile Software Development" in keywords_with_evidence
+
+
 # ---------------------------------------------------------------------------
 # Rewrite quality measurement (see _rewrite_quality)
 # ---------------------------------------------------------------------------
@@ -546,6 +617,21 @@ async def test_rewrite_quality_flags_a_keyword_stitched_on_with_minimal_change(m
     assert any(
         "work_experience[0].bullets[0]" in issue for issue in result["report"]["rewrite_quality_issues"]
     )
+
+
+def test_prompt_instructs_surfacing_non_exact_matched_keywords():
+    """Regression guard: STEP 1 must trigger a rewrite not just for
+    missing_keywords but also for a keyword_evidence entry that's already
+    "supported" via a non-"exact" evidence_type (alias/semantic/experience)
+    — otherwise a keyword like "relational databases" can classify as
+    matched yet never actually appear anywhere in the rendered resume,
+    since nothing tells the model to phrase it. A future prompt edit must
+    not silently drop this branch."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "keyword_evidence" in normalized_prompt
+    assert "evidence_type" in normalized_prompt
+    assert '"alias", "semantic", or "experience"' in normalized_prompt
+    assert "unsupported" in normalized_prompt
 
 
 def test_prompt_defines_a_two_step_rewrite_decision_framework():
@@ -649,6 +735,36 @@ async def test_sends_matched_and_missing_keywords_to_model(mock_genai):
 
 
 @pytest.mark.anyio
+async def test_sends_keyword_evidence_with_tier_and_evidence_to_model(mock_genai):
+    """The optimizer must see *why* each keyword matched, not just the flat
+    matched/missing strings — otherwise a keyword that's only semantically
+    matched (e.g. "relational databases" via Azure SQL) has no signal
+    telling the model to actually phrase the employer's term anywhere."""
+    profile = {
+        "databases": ["Azure SQL", "SQL Server"],
+        "work_experience": [],
+        "projects": [],
+    }
+    job = {"skills": ["relational databases", "Terraform"]}
+    mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
+
+    await ResumeGenerationAgent().generate(profile, job)
+
+    contents = json.loads(mock_genai.aio.models.generate_content.call_args.kwargs["contents"])
+    evidence_by_keyword = {item["keyword"]: item for item in contents["keyword_evidence"]}
+
+    db_evidence = evidence_by_keyword["relational databases"]
+    assert db_evidence["status"] == "supported"
+    assert db_evidence["evidence_type"] == "semantic"
+    assert set(db_evidence["evidence"]) == {"Azure SQL", "SQL Server"}
+
+    terraform_evidence = evidence_by_keyword["Terraform"]
+    assert terraform_evidence["status"] == "unsupported"
+    assert terraform_evidence["evidence_type"] == "none"
+    assert terraform_evidence["evidence"] == []
+
+
+@pytest.mark.anyio
 async def test_sends_editable_blocks_with_block_ids_and_placeholder_text(mock_genai):
     mock_genai.aio.models.generate_content.return_value = _make_response(_PATCHES_RESPONSE)
 
@@ -742,6 +858,28 @@ def test_prompt_explains_soft_skill_and_process_keywords_can_be_truthfully_impli
     normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
     assert "full lifecycle development" in normalized_prompt
     assert "data science" in normalized_prompt
+
+
+def test_prompt_explains_purpose_driven_project_bullets():
+    """Regression guard: the Projects-redesign (Phase D) added distinct-
+    purpose bullet blocks (architecture_bullet/technical_achievement_bullet/
+    impact_bullet) — a future prompt edit must not silently drop the
+    instruction explaining what each one is for and where its content
+    comes from, or the model will have no idea how to fill a block it's
+    never seen documented."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "architecture_bullet" in normalized_prompt
+    assert "technical_achievement_bullet" in normalized_prompt
+    assert "impact_bullet" in normalized_prompt
+    assert "do not pad a bullet with restated description" in normalized_prompt
+
+
+def test_prompt_forbids_adding_a_technology_to_the_tech_stack_block():
+    """Regression guard: the tech-stack block must stay reorder-only — a
+    future prompt edit must not silently drop the explicit instruction not
+    to add a job-required technology a project didn't actually use."""
+    normalized_prompt = " ".join(_SYSTEM_PROMPT.split())
+    assert "never add one that isn't already in candidate_profile.projects[i]" in normalized_prompt
 
 
 def test_prompt_explains_the_patch_contract():

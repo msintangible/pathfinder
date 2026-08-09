@@ -73,7 +73,7 @@ def match_keywords(profile: dict, job: dict) -> KeywordReport:
 
     job_terms = _job_terms(job)
     evidence = [classify_keyword(original, profile) for original in job_terms.values()]
-    matched = [item.keyword for item in evidence if item.status != "unsupported"]
+    matched = [item.keyword for item in evidence if item.status == "supported"]
     missing = [item.keyword for item in evidence if item.status == "unsupported"]
     return KeywordReport(matched=matched, missing=missing, evidence=evidence)
 
@@ -218,6 +218,16 @@ def _flatten_candidate_profile_text(profile: dict) -> str:
         parts.extend(project.get("technologies") or [])
         parts.extend(project.get("skills_demonstrated") or [])
         parts.extend(project.get("notable_achievements") or [])
+        # Structured project evidence (see schemas/profile.py::Project) — the
+        # whole point of capturing these is to make them real, searchable
+        # ATS evidence, not just richer bullet source material.
+        parts.append(project.get("problem") or "")
+        parts.append(project.get("solution") or "")
+        parts.extend(project.get("architecture") or [])
+        parts.extend(project.get("responsibilities") or [])
+        parts.extend(project.get("technical_achievements") or [])
+        parts.extend(project.get("impact") or [])
+        parts.extend(project.get("deployment") or [])
 
     for repo in profile.get("github_repositories") or []:
         parts.append(repo.get("description") or "")

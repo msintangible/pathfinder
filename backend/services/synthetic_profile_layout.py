@@ -17,6 +17,25 @@ from schemas.resume_layout import LayoutSection, ResumeLayoutDocument, RunSpan, 
 
 _LIST_SEPARATOR = ", "
 
+# Purpose-driven project bullets (Phase D of the Projects redesign) — a
+# field's block is only created when the project actually has that kind of
+# evidence, so the LLM never has to pad a bullet with filler for a project
+# with nothing genuine to say there. Each is a blank-canvas block like
+# "skills" (see below) since there's no single existing bullet of text to
+# lightly edit — the LLM synthesizes it fresh from the read-only
+# candidate_profile context's structured field (a list of facts), not from
+# starting text.
+_PROJECT_BULLET_PURPOSES = (
+    ("architecture", "architecture_bullet"),
+    ("technical_achievements", "technical_achievement_bullet"),
+    ("impact", "impact_bullet"),
+)
+# Total non-description bullets per project (achievements + purpose
+# bullets combined) never exceeds this — the "3-4 bullets, never padded"
+# target from the Projects-redesign plan (description is the 1st bullet,
+# leaving up to 3 more).
+_MAX_EXTRA_PROJECT_BULLETS = 3
+
 _SKILL_GROUP_SOURCES = (
     ("Languages", ("programming_languages",)),
     ("Cloud", ("cloud_platforms",)),
@@ -31,6 +50,37 @@ _SKILL_GROUP_SOURCES = (
     # through to _build_skill_groups's "Additional" bucket below rather than
     # getting a confusing "Technical" label inside a "Technical Skills" section.
 )
+
+
+def _project_bullet_specs(project: dict) -> list[tuple[str, str]]:
+    """
+    Which extra (non-description) bullet blocks this project gets — each a
+    (block_id_suffix, seed_text) pair, in render order. Purpose-driven
+    blocks come first (architecture/technical_achievement/impact —
+    whichever the project has real evidence for; always blank-canvas, no
+    seed text, since the LLM synthesizes fresh from the read-only
+    candidate_profile context's structured field rather than lightly
+    editing one existing bullet), then legacy notable_achievements blocks
+    (seeded with their original text) fill any of the remaining
+    _MAX_EXTRA_PROJECT_BULLETS slots the purpose blocks left open — this is
+    what keeps a profile extracted before Phase A (no structured fields
+    populated yet) rendering exactly as it did before.
+
+    Shared by build_synthetic_layout and flatten_layout_to_resume so the
+    two can never drift out of sync about which blocks exist for a given
+    project.
+    """
+    specs = [(suffix, "") for field, suffix in _PROJECT_BULLET_PURPOSES if project.get(field)]
+
+    remaining_slots = max(_MAX_EXTRA_PROJECT_BULLETS - len(specs), 0)
+    achievements = (project.get("notable_achievements") or [])[:remaining_slots]
+    specs.extend((f"achievements[{k}]", text or "") for k, text in enumerate(achievements))
+
+    return specs
+
+
+def _project_bullet_blocks(index: int, project: dict) -> list[TextBlock]:
+    return [_block(f"projects[{index}].{suffix}", text) for suffix, text in _project_bullet_specs(project)]
 
 
 def build_synthetic_layout(ranked_profile: dict) -> ResumeLayoutDocument:
@@ -51,8 +101,7 @@ def build_synthetic_layout(ranked_profile: dict) -> ResumeLayoutDocument:
     for i, project in enumerate(ranked_profile.get("projects") or []):
         blocks.append(_block(f"projects[{i}].description", project.get("description") or ""))
         blocks.append(_block(f"projects[{i}].technologies", join_comma_list(project.get("technologies"))))
-        for k, achievement in enumerate(project.get("notable_achievements") or []):
-            blocks.append(_block(f"projects[{i}].achievements[{k}]", achievement or ""))
+        blocks.extend(_project_bullet_blocks(i, project))
 
     return ResumeLayoutDocument(source_format="synthetic", sections=[LayoutSection(section_id="profile", blocks=blocks)])
 
@@ -84,7 +133,7 @@ def flatten_layout_to_resume(ranked_profile: dict, layout: ResumeLayoutDocument)
 
     projects = []
     for i, project in enumerate(ranked_profile.get("projects") or []):
-        achievement_count = len(project.get("notable_achievements") or [])
+        extra_bullet_ids = [f"projects[{i}].{suffix}" for suffix, _ in _project_bullet_specs(project)]
         projects.append({
             "name": project.get("name"),
             "description": text_by_id[f"projects[{i}].description"] or None,
@@ -92,7 +141,7 @@ def flatten_layout_to_resume(ranked_profile: dict, layout: ResumeLayoutDocument)
             "technologies": split_comma_list(text_by_id[f"projects[{i}].technologies"]),
             "bullets": [item for item in [
                 text_by_id[f"projects[{i}].description"] or "",
-                *[text_by_id[f"projects[{i}].achievements[{k}]"] for k in range(achievement_count)],
+                *[text_by_id[block_id] for block_id in extra_bullet_ids],
             ] if item],
         })
 

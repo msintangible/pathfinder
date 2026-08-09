@@ -113,11 +113,14 @@ class KeywordEvidence(BaseModel):
     Why a job keyword is (or isn't) considered supported by a candidate
     profile — see services/keyword_evidence.py::classify_keyword, which is
     the only thing permitted to produce one of these. Every field is
-    derived deterministically from a fixed rule per status tier, never a
-    free-floating LLM guess, so the same profile+keyword always classifies
-    the same way.
+    derived deterministically from a fixed rule per evidence_type tier,
+    never a free-floating LLM guess, so the same profile+keyword always
+    classifies the same way.
 
-    status tiers, most to least direct:
+    status is the binary matched/missing signal every existing consumer
+    (keyword_matcher.match_keywords' matched/missing split, ats_scorer,
+    relevance_ranker) actually needs. evidence_type is the tier that
+    produced it, most to least direct:
       - "exact": the keyword itself appears verbatim (case-insensitive) in
         the profile's skill fields.
       - "alias": the profile has a different but genuinely equivalent term
@@ -136,10 +139,11 @@ class KeywordEvidence(BaseModel):
         logic). Never applied to 1-2 word keywords — see that function's
         own docstring for why a short phrase needs an exact/alias/semantic
         match, not a loose word-overlap one.
-      - "unsupported": none of the above — no genuine basis found.
+      - "none": status is "unsupported" — no genuine basis found.
     """
     keyword: str
-    status: Literal["exact", "alias", "semantic", "experience", "unsupported"]
+    status: Literal["supported", "unsupported"]
+    evidence_type: Literal["exact", "alias", "semantic", "experience", "none"]
     confidence: float
     evidence: list[str] = []
 
