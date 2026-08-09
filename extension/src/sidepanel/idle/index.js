@@ -18,6 +18,7 @@
  */
 
 import { loadProfile } from "../../shared/profileApi.js";
+import { pfHeader } from "../shared/header.js";
 
 const root = document.getElementById("idle-root");
 const legacyRoot = document.getElementById("legacy-root");
@@ -26,22 +27,6 @@ const legacyRoot = document.getElementById("legacy-root");
 async function getActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab ?? null;
-}
-
-function header() {
-  const el = document.createElement("div");
-  el.className = "pf-header";
-
-  const badge = document.createElement("span");
-  badge.className = "pf-header__badge";
-  badge.textContent = "P";
-
-  const name = document.createElement("span");
-  name.className = "pf-header__name";
-  name.textContent = "Pathfinder";
-
-  el.append(badge, name);
-  return el;
 }
 
 function sectionLabel(text) {
@@ -115,7 +100,7 @@ function profileSection(onViewProfile) {
   info.appendChild(status);
 
   const button = document.createElement("button");
-  button.className = "idle-btn-secondary";
+  button.className = "idle-btn-secondary pf-btn pf-btn--pill";
   button.textContent = "View profile";
   button.addEventListener("click", onViewProfile);
 
@@ -126,7 +111,7 @@ function profileSection(onViewProfile) {
 function buildScreen(onViewProfile) {
   const screen = document.createElement("div");
   screen.className = "idle-screen";
-  screen.appendChild(header());
+  screen.appendChild(pfHeader());
 
   const main = document.createElement("div");
   main.className = "idle-main";
@@ -142,14 +127,20 @@ function showLegacy() {
   root.hidden = true;
   root.innerHTML = "";
   legacyRoot.hidden = false;
+  // Defensive: a finished review screen (review/index.js) may still be
+  // visible from before the user switched to this tab — claim the panel outright.
+  const reviewScreenRoot = document.getElementById("review-screen-root");
+  if (reviewScreenRoot) reviewScreenRoot.hidden = true;
 }
 
 function showIdleScreen() {
   legacyRoot.hidden = true;
-  // Defensive: a detection-state screen (detection/index.js) may still be
+  // Defensive: a detection-state, loading, or review screen may still be
   // visible from before the user switched to this tab — claim the panel outright.
   const detectionScreenRoot = document.getElementById("detection-screen-root");
   if (detectionScreenRoot) detectionScreenRoot.hidden = true;
+  const reviewScreenRoot = document.getElementById("review-screen-root");
+  if (reviewScreenRoot) reviewScreenRoot.hidden = true;
   root.innerHTML = "";
   root.appendChild(buildScreen(showLegacy));
   root.hidden = false;

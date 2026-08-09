@@ -37,6 +37,7 @@
  */
 
 import { Message } from "../../shared/constants.js";
+import { pfHeader } from "../shared/header.js";
 
 // Looked up fresh on every call rather than cached at module scope: unlike
 // idle/index.js and detection/index.js (each only ever imported directly,
@@ -59,22 +60,6 @@ export const STEPS = [
   { label: "Rewriting content for ATS relevance", checkAtMs: 2400 },
   { label: "Applying edits to your document", checkAtMs: null },
 ];
-
-function header() {
-  const el = document.createElement("div");
-  el.className = "pf-header";
-
-  const badge = document.createElement("span");
-  badge.className = "pf-header__badge";
-  badge.textContent = "P";
-
-  const name = document.createElement("span");
-  name.className = "pf-header__name";
-  name.textContent = "Pathfinder";
-
-  el.append(badge, name);
-  return el;
-}
 
 function stepIcon(state) {
   const el = document.createElement("span");
@@ -109,7 +94,7 @@ function renderSteps(steps, stepStates) {
 function buildScreen(steps, stepStates) {
   const screen = document.createElement("div");
   screen.className = "load-screen";
-  screen.appendChild(header());
+  screen.appendChild(pfHeader());
 
   const main = document.createElement("div");
   main.className = "load-main";
@@ -136,7 +121,7 @@ function buildScreen(steps, stepStates) {
 function buildErrorScreen(error, onRetry) {
   const screen = document.createElement("div");
   screen.className = "load-screen";
-  screen.appendChild(header());
+  screen.appendChild(pfHeader());
 
   const main = document.createElement("div");
   main.className = "load-main";
@@ -153,7 +138,7 @@ function buildErrorScreen(error, onRetry) {
 
   if (onRetry) {
     const retryBtn = document.createElement("button");
-    retryBtn.className = "load-retry-btn";
+    retryBtn.className = "load-retry-btn pf-btn pf-btn--block pf-btn--outline";
     retryBtn.textContent = "Try again";
     retryBtn.addEventListener("click", onRetry);
     main.appendChild(retryBtn);

@@ -45,20 +45,9 @@
   margin: 0 0 var(--space-8);
 }
 
-/* Matches .det-btn-secondary's shape/tone (detection.css) — same secondary
- * action treatment used elsewhere in the redesign. */
-.load-retry-btn {
-  width: 100%;
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  background: transparent;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  cursor: pointer;
-}
+/* .load-retry-btn carries no styles of its own — a bare hook for
+ * tests/identity. Visuals come from the shared .pf-btn classes added
+ * alongside it (sidepanel.css). */
 
 .load-steps {
   display: flex;

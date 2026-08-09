@@ -27,34 +27,8 @@
   margin: 0 0 var(--space-5);
 }
 
-.det-meter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  margin-bottom: var(--space-2);
-}
-
-.det-meter__bars {
-  display: flex;
-  gap: 3px;
-}
-
-.det-meter__bar {
-  width: 16px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--meter-empty);
-}
-
-.det-meter__bar--known-ats { background: var(--meter-strong); }
-.det-meter__bar--unknown-ats { background: var(--meter-partial); }
-.det-meter__bar--keywords-only { background: var(--meter-low); }
-
-.det-meter__label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-}
+/* Confidence meter is now shared — see .pf-meter* in sidepanel.css and
+ * shared/confidenceMeter.js. */
 
 .det-system {
   font-size: 12px;
@@ -131,53 +105,10 @@
   flex: 1;
 }
 
-/* --- Buttons --- */
-
-.det-btn-primary,
-.det-btn-accent-outline,
-.det-btn-secondary {
-  width: 100%;
-  font-family: inherit;
-  cursor: pointer;
-  border-radius: var(--radius);
-}
-
-.det-btn-primary {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--accent-on);
-  background: var(--accent);
-  border: none;
-  padding: 15px;
-}
-
-.det-btn-accent-outline,
-.det-btn-secondary {
-  font-size: 15px;
-  font-weight: 600;
-  background: transparent;
-  padding: 14px;
-  border: 1.5px solid;
-}
-
-.det-btn-accent-outline {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.det-btn-secondary {
-  color: var(--text);
-  border-color: var(--border);
-}
-
-/* Same reduced-opacity treatment as .btn:disabled in sidepanel.css — a
- * disabled action must look disabled, never silently inert. */
-.det-btn-primary:disabled,
-.det-btn-accent-outline:disabled,
-.det-btn-secondary:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
+/* --- Buttons ---
+ * .det-btn-primary / .det-btn-accent-outline / .det-btn-secondary carry no
+ * styles of their own — bare hooks for tests/identity. Visuals come from the
+ * shared .pf-btn classes added alongside them (sidepanel.css). */
 
 .det-link {
   display: block;

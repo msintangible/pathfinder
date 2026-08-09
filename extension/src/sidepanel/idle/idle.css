@@ -116,20 +116,6 @@
   margin: 0;
 }
 
-.idle-btn-secondary {
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 9px 16px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.idle-btn-secondary:hover {
-  background: var(--hover);
-  border-color: var(--muted);
-}
+/* .idle-btn-secondary carries no styles of its own — it's a bare hook for
+ * tests/identity. Visuals come from the shared .pf-btn.pf-btn--pill classes
+ * added alongside it (sidepanel.css). */

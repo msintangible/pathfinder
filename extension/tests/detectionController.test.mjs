@@ -54,6 +54,7 @@ async function mountController({
       <div id="idle-root" hidden></div>
       <div id="detection-screen-root" hidden></div>
       <div id="loading-screen-root" hidden></div>
+      <div id="review-screen-root" hidden></div>
       <div id="legacy-root">
         <div id="detection-root"></div>
       </div>
@@ -97,6 +98,7 @@ async function mountController({
     legacyRoot: document.getElementById("legacy-root"),
     idleRoot: document.getElementById("idle-root"),
     loadingRoot: document.getElementById("loading-screen-root"),
+    reviewRoot: document.getElementById("review-screen-root"),
     state,
     calls,
     /** Simulate Chrome firing tabs.onUpdated, then wait for the async handler. */
@@ -150,7 +152,7 @@ await test("known ATS: screen shown, meter/labels correct, fallback title (no an
   assert(screenRoot.textContent.includes("Known application system"), "system label");
   assert(screenRoot.textContent.includes("Job listing detected"), "fallback title, no fabricated job title");
   assert(screenRoot.textContent.includes("Greenhouse"), "ATS name shown even without analysis");
-  assert(screenRoot.querySelectorAll(".det-meter__bar--known-ats").length === 3, "3 bars filled");
+  assert(screenRoot.querySelectorAll(".pf-meter__bar--known-ats").length === 3, "3 bars filled");
 });
 
 await test("known ATS: matching job analysis populates real title/company", async () => {
@@ -188,7 +190,7 @@ await test("known ATS: while the request is genuinely in flight, the loading scr
   let resolveGenerate;
   const pendingGenerate = new Promise((res) => { resolveGenerate = res; });
   const freshJob = { id: "job-1", title: "Backend Engineer", company: "Acme", url: DEFAULT_URL };
-  const { screenRoot, legacyRoot, loadingRoot } = await mountController({
+  const { screenRoot, legacyRoot, loadingRoot, reviewRoot } = await mountController({
     detection: knownAts(),
     jobAnalysis: freshJob,
     generateResponse: pendingGenerate,
@@ -200,6 +202,7 @@ await test("known ATS: while the request is genuinely in flight, the loading scr
 
   assert(screenRoot.hidden === true, "detection screen hidden once tailoring starts");
   assert(legacyRoot.hidden === true, "legacy stack not shown yet either — loading screen owns the panel");
+  assert(reviewRoot.hidden === true, "review screen not shown yet either — loading screen owns the panel");
   assert(loadingRoot.hidden === false, "loading screen shown");
   assert(loadingRoot.textContent.includes(Message.GENERATING), "shows the real generating state, not a blank panel");
 
@@ -207,12 +210,12 @@ await test("known ATS: while the request is genuinely in flight, the loading scr
   await wait(10);
 
   assert(loadingRoot.hidden === true, "loading screen hidden once the real result actually lands");
-  assert(legacyRoot.hidden === false, "legacy stack revealed only once the real result is in, not before");
+  assert(reviewRoot.hidden === false, "review screen (Screen 4) revealed only once the real result is in, not before");
 });
 
-await test("known ATS with fresh job analysis: Tailor skips re-analyzing, generates, and reveals the legacy result bridge", async () => {
+await test("known ATS with fresh job analysis: Tailor skips re-analyzing, generates, and reveals Screen 4 (Review changes)", async () => {
   const freshJob = { id: "job-1", title: "Backend Engineer", company: "Acme", url: DEFAULT_URL };
-  const { screenRoot, legacyRoot, loadingRoot, calls } = await mountController({
+  const { screenRoot, legacyRoot, loadingRoot, reviewRoot, calls } = await mountController({
     detection: knownAts(),
     jobAnalysis: freshJob,
   });
@@ -226,7 +229,9 @@ await test("known ATS with fresh job analysis: Tailor skips re-analyzing, genera
   assert(calls.savedResumeResults.length === 1 && calls.savedResumeResults[0]?.ats_score === 80,
     "real result persisted via SAVE_RESUME_RESULT, same as optimize/index.js's own flow");
   assert(loadingRoot.hidden === true, "loading screen hidden after success");
-  assert(legacyRoot.hidden === false, "legacy stack (bridge to the existing result panel) revealed on success");
+  assert(legacyRoot.hidden === true, "legacy stack stays hidden — Screen 4 owns the panel now, not the legacy bridge");
+  assert(reviewRoot.hidden === false, "review screen (Screen 4) revealed on success");
+  assert(reviewRoot.textContent.includes("Backend Engineer · Acme"), "review screen header uses the real job title/company");
 });
 
 await test("known ATS with stale job analysis (different URL): Tailor re-analyzes before generating", async () => {
@@ -297,7 +302,7 @@ await test("unknown ATS: screen shown, 2 bars filled, missing-signals copy names
   assert(legacyRoot.hidden === true, "legacy hidden");
   assert(screenRoot.textContent.includes("Partial match"), "meter label");
   assert(screenRoot.textContent.includes("Unrecognised system"), "system label");
-  assert(screenRoot.querySelectorAll(".det-meter__bar--unknown-ats").length === 2, "2 bars filled");
+  assert(screenRoot.querySelectorAll(".pf-meter__bar--unknown-ats").length === 2, "2 bars filled");
   assert(screenRoot.textContent.includes("Some details are missing"), "notice title");
   // signals: applicationForm true, jobKeywords true, jsonLd false, metaTags false
   assert(screenRoot.textContent.includes("structured job data"), "names missing jsonLd signal");
@@ -318,7 +323,7 @@ await test("keywords only: screen shown, 1 bar filled, no keyword pills fabricat
   assert(legacyRoot.hidden === true, "legacy hidden");
   assert(screenRoot.textContent.includes("Low match"), "meter label");
   assert(screenRoot.textContent.includes("Not enough to tailor from"), "heading");
-  assert(screenRoot.querySelectorAll(".det-meter__bar--keywords-only").length === 1, "1 bar filled");
+  assert(screenRoot.querySelectorAll(".pf-meter__bar--keywords-only").length === 1, "1 bar filled");
   assert(!screenRoot.textContent.includes("KEYWORDS FOUND"), "no fabricated keyword pills section");
   const btn = Array.from(screenRoot.querySelectorAll("button")).find((b) => b.textContent === "Copy keywords instead");
   assert(btn && btn.disabled === true, "Copy keywords instead present and disabled");

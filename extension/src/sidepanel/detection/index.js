@@ -11,16 +11,15 @@
  *
  * The "Tailor my resume"/"Tailor with what's here" buttons drive the real
  * tailoring pipeline (analyze the job if needed, then generate) behind
- * loading/index.js's Screen 3. There is no Screen 4 (diff review) yet, so a
- * success currently falls back to revealing the legacy stack's own Optimize
- * CV result panel (optimize/index.js's existing renderResult, picked up
- * automatically via its chrome.storage.onChanged listener once
- * SAVE_RESUME_RESULT writes the result) — a deliberate temporary bridge,
- * not a stand-in for building the real diff-review screen.
+ * loading/index.js's Screen 3, then hand off to review/index.js's Screen 4
+ * (diff review) on success.
  */
 
 import { loadProfileId } from "../../shared/profileApi.js";
 import { driveLoading, hideLoadingScreen } from "../loading/index.js";
+import { pfHeader } from "../shared/header.js";
+import { confidenceMeter } from "../shared/confidenceMeter.js";
+import { showReviewScreen } from "../review/index.js";
 
 /** Debug-only: the signals <dl>. Off by default, same as sidepanel.js. */
 const DEBUG_MODE = false;
@@ -30,6 +29,7 @@ const screenRoot = document.getElementById("detection-screen-root");
 const legacyRoot = document.getElementById("legacy-root");
 const idleRoot = document.getElementById("idle-root");
 const loadingRoot = document.getElementById("loading-screen-root");
+const reviewRoot = document.getElementById("review-screen-root");
 
 /** Return the active tab (or null). */
 async function getActiveTab() {
@@ -76,56 +76,12 @@ function render(badgeEl, signals) {
 // Redesign: Known ATS / Unknown ATS / Keywords only full screens
 // ---------------------------------------------------------------------------
 
-const METER = {
-  "known-ats": { label: "Strong match", filled: 3 },
-  "unknown-ats": { label: "Partial match", filled: 2 },
-  "keywords-only": { label: "Low match", filled: 1 },
-};
-
 /** Which of the 3 job-page-ish states applies, or null (idle/index.js's turn). */
 function classify(detection) {
   if (detection.isJobPage && detection.signals.urlMatch) return "known-ats";
   if (detection.isJobPage && !detection.signals.urlMatch) return "unknown-ats";
   if (!detection.isJobPage && detection.confidence > 0) return "keywords-only";
   return null;
-}
-
-function header() {
-  const el = document.createElement("div");
-  el.className = "pf-header";
-
-  const badgeEl = document.createElement("span");
-  badgeEl.className = "pf-header__badge";
-  badgeEl.textContent = "P";
-
-  const name = document.createElement("span");
-  name.className = "pf-header__name";
-  name.textContent = "Pathfinder";
-
-  el.append(badgeEl, name);
-  return el;
-}
-
-function confidenceMeter(state) {
-  const { label, filled } = METER[state];
-
-  const wrap = document.createElement("div");
-  wrap.className = "det-meter";
-
-  const bars = document.createElement("div");
-  bars.className = "det-meter__bars";
-  for (let i = 0; i < 3; i++) {
-    const bar = document.createElement("span");
-    bar.className = "det-meter__bar" + (i < filled ? ` det-meter__bar--${state}` : "");
-    bars.appendChild(bar);
-  }
-
-  const text = document.createElement("span");
-  text.className = "det-meter__label";
-  text.textContent = label;
-
-  wrap.append(bars, text);
-  return wrap;
 }
 
 const SYSTEM_LABEL = {
@@ -260,7 +216,7 @@ function tailorButton(className, text, onClick) {
 function buildKnownAtsScreen(detection, jobAnalysis, onViewProfile) {
   const screen = document.createElement("div");
   screen.className = "det-screen";
-  screen.appendChild(header());
+  screen.appendChild(pfHeader());
 
   const main = document.createElement("div");
   main.className = "det-main";
@@ -273,7 +229,11 @@ function buildKnownAtsScreen(detection, jobAnalysis, onViewProfile) {
   main.appendChild(body);
 
   main.appendChild(spacer());
-  main.appendChild(tailorButton("det-btn-primary", "Tailor my resume", () => handleTailor(detection, jobAnalysis)));
+  main.appendChild(
+    tailorButton("det-btn-primary pf-btn pf-btn--block pf-btn--accent", "Tailor my resume", () =>
+      handleTailor(detection, jobAnalysis)
+    )
+  );
   main.appendChild(link("View profile", onViewProfile));
 
   screen.appendChild(main);
@@ -283,7 +243,7 @@ function buildKnownAtsScreen(detection, jobAnalysis, onViewProfile) {
 function buildUnknownAtsScreen(detection, jobAnalysis, onViewProfile) {
   const screen = document.createElement("div");
   screen.className = "det-screen";
-  screen.appendChild(header());
+  screen.appendChild(pfHeader());
 
   const main = document.createElement("div");
   main.className = "det-main";
@@ -303,7 +263,9 @@ function buildUnknownAtsScreen(detection, jobAnalysis, onViewProfile) {
 
   main.appendChild(spacer());
   main.appendChild(
-    tailorButton("det-btn-accent-outline", "Tailor with what's here", () => handleTailor(detection, jobAnalysis))
+    tailorButton("det-btn-accent-outline pf-btn pf-btn--block pf-btn--accent-outline", "Tailor with what's here", () =>
+      handleTailor(detection, jobAnalysis)
+    )
   );
   main.appendChild(link("View profile", onViewProfile));
 
@@ -314,7 +276,7 @@ function buildUnknownAtsScreen(detection, jobAnalysis, onViewProfile) {
 function buildKeywordsOnlyScreen(detection, jobAnalysis, onViewProfile) {
   const screen = document.createElement("div");
   screen.className = "det-screen";
-  screen.appendChild(header());
+  screen.appendChild(pfHeader());
 
   const main = document.createElement("div");
   main.className = "det-main";
@@ -338,7 +300,7 @@ function buildKeywordsOnlyScreen(detection, jobAnalysis, onViewProfile) {
   main.appendChild(divider());
 
   main.appendChild(spacer());
-  main.appendChild(tailorButton("det-btn-secondary", "Copy keywords instead"));
+  main.appendChild(tailorButton("det-btn-secondary pf-btn pf-btn--block pf-btn--outline", "Copy keywords instead"));
   main.appendChild(link("View profile", onViewProfile));
 
   screen.appendChild(main);
@@ -353,7 +315,8 @@ function buildKeywordsOnlyScreen(detection, jobAnalysis, onViewProfile) {
  *  analyseJob(), and persist it the same way (SAVE_JOB_ANALYSIS, plus
  *  clearing any resume result left over from a previous job on this tab) so
  *  the rest of the extension can't tell the difference from a manual
- *  "Analyse this page" click. Returns the new job id, or throws — driveLoading
+ *  "Analyse this page" click. Returns the new job's {id, title, company}
+ *  (Screen 4 needs title/company for its header), or throws — driveLoading
  *  turns a throw into the error screen. res.error is already safe,
  *  plain-language text by the time it gets here: background/api.js's
  *  analyzeJob() logs the real failure detail and sanitizes it before
@@ -382,7 +345,7 @@ async function analyzeCurrentTab(tab) {
     type: "SAVE_RESUME_RESULT",
     payload: { tabId: tab.id, data: null },
   });
-  return res.data.id;
+  return { id: res.data.id, title: res.data.title, company: res.data.company };
 }
 
 /** Same GENERATE_RESUME + SAVE_RESUME_RESULT sequence as optimize/index.js's
@@ -418,13 +381,20 @@ async function handleTailor(detection, jobAnalysis) {
   if (screenRoot) screenRoot.hidden = true;
   if (legacyRoot) legacyRoot.hidden = true;
   if (idleRoot) idleRoot.hidden = true;
+  if (reviewRoot) reviewRoot.hidden = true;
+
+  // Set inside task() when `analysis` was stale/missing, so the review
+  // screen's header can show the real title/company regardless of which
+  // path was taken — captured here (not returned from driveLoading) since
+  // task() only returns the generation result itself.
+  let jobInfo = analysis;
 
   const task = async () => {
     const profileId = await loadProfileId();
     if (!profileId) throw new Error("Import your profile before tailoring a resume.");
 
-    const jobId = analysis ? analysis.id : await analyzeCurrentTab(startTab);
-    return generateResumeFor(startTab, profileId, jobId);
+    if (!jobInfo) jobInfo = await analyzeCurrentTab(startTab);
+    return generateResumeFor(startTab, profileId, jobInfo.id);
   };
 
   const outcome = await driveLoading(task, { onRetry: () => handleTailor(detection, jobAnalysis) });
@@ -435,7 +405,9 @@ async function handleTailor(detection, jobAnalysis) {
   // already re-ran loadDetection() for whichever tab is active now, and that
   // already-correct screen must not be clobbered by this stale request's result.
   const stillActive = await getActiveTab();
-  if (stillActive?.id === startTab.id) showLegacyScreen();
+  if (stillActive?.id === startTab.id) {
+    await showReviewScreen({ result: outcome.result, title: jobInfo?.title, company: jobInfo?.company });
+  }
 }
 
 /** "View profile" has no dedicated screen in this design pass — reveals the
@@ -445,20 +417,22 @@ function showLegacyScreen() {
     screenRoot.hidden = true;
     screenRoot.innerHTML = "";
   }
-  // Defensive: a tailoring run may still have the loading screen up from
-  // before the user switched to this tab — claim the panel outright, same
-  // reasoning as idleRoot below.
+  // Defensive: a tailoring run may still have the loading screen (or a
+  // finished review screen) up from before the user switched to this tab —
+  // claim the panel outright, same reasoning as idleRoot below.
   if (loadingRoot) loadingRoot.hidden = true;
+  if (reviewRoot) reviewRoot.hidden = true;
   if (legacyRoot) legacyRoot.hidden = false;
 }
 
 function showDetectionScreen(state, detection, jobAnalysis) {
   if (!screenRoot || !legacyRoot) return;
   legacyRoot.hidden = true;
-  // Defensive: the idle screen may still be visible from before the user
-  // switched to this tab — claim the panel outright.
+  // Defensive: the idle, loading, or review screen may still be visible
+  // from before the user switched to this tab — claim the panel outright.
   if (idleRoot) idleRoot.hidden = true;
   if (loadingRoot) loadingRoot.hidden = true;
+  if (reviewRoot) reviewRoot.hidden = true;
 
   screenRoot.innerHTML = "";
   const builders = {
