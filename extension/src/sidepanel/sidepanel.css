@@ -25,6 +25,12 @@
   /* Red — genuine failure only (backend down, parse failure). */
   --red: #cf3a3a;
 
+  /* Diff-highlight — pale tint of the reserved accent (see --accent above),
+     background only. Marks changed content on the Review Changes screen.
+     Text inside stays --text; this token carries no text color, unlike
+     amber/red which pair a bg with a matching text tone. */
+  --diff-bg: #faece6;
+
   /* Confidence-meter bar fill — one tone per match strength (not a single
      filled/unfilled binary), plus a shared empty-bar tone. Neutral, not
      terracotta: this is informational, not "AI acting now". */
@@ -76,6 +82,8 @@
     --amber-text: #c9a969;
 
     --red: #ec6a63;
+
+    --diff-bg: #332119;
 
     --meter-strong: #e2e2e0;
     --meter-partial: #8c8e92;
@@ -317,4 +325,175 @@ body {
   font-weight: 600;
   color: var(--text);
   letter-spacing: -0.2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Shared button system — every full-screen redesign state (idle, detection,
+ * loading, and the screens built on top of them) composes its buttons from
+ * these instead of each defining its own. Screens keep their own semantic
+ * class (e.g. .det-btn-primary, .load-retry-btn) as a bare, unstyled hook —
+ * for tests and for readability at the call site — and add these .pf-btn
+ * classes for the actual look, so the same visual variant never has to be
+ * redefined per screen.
+ * ------------------------------------------------------------------------ */
+.pf-btn {
+  font-family: inherit;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.pf-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pf-btn--block {
+  display: block;
+  width: 100%;
+}
+
+/* Filled, reserved-accent CTA — "AI acting now" only (tailor, generate). */
+.pf-btn--accent {
+  font-size: 15px;
+  padding: 15px;
+  border: none;
+  color: var(--accent-on);
+  background: var(--accent);
+}
+
+/* Filled, neutral CTA — the default action once the AI has already acted
+   (download, submit, retry, done). Not terracotta: nothing is "acting now". */
+.pf-btn--fill {
+  font-size: 15px;
+  padding: 15px;
+  border: none;
+  color: var(--fill-on);
+  background: var(--fill);
+}
+
+/* Outline, neutral secondary action. */
+.pf-btn--outline {
+  font-size: 15px;
+  padding: 14px;
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  background: transparent;
+}
+
+/* Outline, accent-colored secondary action — still "AI acting now", just
+   not the single highest-emphasis action on the screen. */
+.pf-btn--accent-outline {
+  font-size: 15px;
+  padding: 14px;
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  background: transparent;
+}
+
+/* Small inline pill — compact secondary action next to a status line
+   (e.g. idle screen's "View profile"). */
+.pf-btn--pill {
+  display: inline-block;
+  width: auto;
+  font-size: 13px;
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.pf-btn--pill:hover {
+  background: var(--hover);
+  border-color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+ * Confidence meter — bar strength + label pair used by the detection screens
+ * today and by Screen 5 (Decide) once it exists. Shared here rather than
+ * per-screen so it's defined once regardless of which screen renders it.
+ * ------------------------------------------------------------------------ */
+.pf-meter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.pf-meter__bars {
+  display: flex;
+  gap: 3px;
+}
+
+.pf-meter__bar {
+  width: 16px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--meter-empty);
+}
+
+.pf-meter__bar--known-ats { background: var(--meter-strong); }
+.pf-meter__bar--unknown-ats { background: var(--meter-partial); }
+.pf-meter__bar--keywords-only { background: var(--meter-low); }
+
+.pf-meter__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------------
+ * Diff-change-row — one changed section on the Review Changes screen
+ * (Screen 4): reason label + Revert action, the new (highlighted) content,
+ * and a muted "was:" line showing the original. Standalone piece, not yet
+ * wired into a real screen — Screen 4 does that.
+ * ------------------------------------------------------------------------ */
+.pf-diff-row {
+  margin-bottom: var(--space-8);
+}
+
+.pf-diff-row__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.pf-diff-row__reason {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.pf-diff-row__new {
+  background: var(--diff-bg);
+  border-radius: var(--radius);
+  padding: var(--space-6) var(--space-7);
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.pf-diff-row__old {
+  margin: var(--space-2) 0 0;
+  font-size: 12px;
+  color: var(--label);
+}
+
+.pf-diff-row__old-text {
+  text-decoration: line-through;
+}
+
+/* Reverted state: the primary box now shows the original, not the AI's
+   content, so it drops the accent-tinted diff highlight — that tint means
+   "AI acting now" everywhere else in the product and would be a lie here. */
+.pf-diff-row__new--original {
+  background: var(--hover);
+  color: var(--muted);
+}
+
+.pf-diff-row--reverted {
+  opacity: 0.85;
 }

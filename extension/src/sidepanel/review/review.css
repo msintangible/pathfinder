@@ -1,0 +1,75 @@
+/* Review changes screen (Screen 4) — reuses the :root design tokens and the
+ * shared .pf-btn / .pf-diff-row system from sidepanel.css. */
+
+#review-screen-root {
+  margin: -12px; /* cancel body's global 12px padding for a full-bleed screen */
+}
+
+.review-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.review-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-8);
+}
+
+.review-heading {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.3px;
+  margin: 0 0 5px;
+}
+
+.review-subtitle {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0 0 var(--space-8);
+}
+
+.review-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--label);
+  margin: 0 0 var(--space-3);
+}
+
+.review-kept-count {
+  font-size: 13px;
+  color: var(--muted);
+  margin: var(--space-4) 0 var(--space-7);
+}
+
+/* Same amber "informational catch" pattern as detection.css's .det-notice —
+ * reused rather than redefined, since it's the same semantic (not an error). */
+.review-notice {
+  background: var(--amber-bg);
+  border-radius: var(--radius);
+  padding: var(--space-6) var(--space-7);
+  margin-bottom: var(--space-7);
+}
+
+.review-notice__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amber-text);
+  margin: 0 0 var(--space-2);
+}
+
+.review-notice__body {
+  font-size: 13px;
+  color: var(--amber-text);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.review-download-btn {
+  margin-top: auto;
+}
