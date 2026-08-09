@@ -13,8 +13,16 @@ class LLMOutputError(Exception):
     """
 
 
-def parse_llm_json(text: str, schema: type[BaseModel]) -> dict:
+def parse_llm_json(text: str | None, schema: type[BaseModel]) -> dict:
     """Parse and validate a JSON LLM response against schema, returning a plain dict."""
+    # google-genai's response.text is None (not "") when the model returns no
+    # text part at all — e.g. a safety/recitation block — rather than malformed
+    # JSON. json.loads(None) raises TypeError, which json.JSONDecodeError below
+    # wouldn't catch, so it's handled explicitly here as the same upstream
+    # contract violation.
+    if text is None:
+        raise LLMOutputError("LLM response contained no text (likely blocked by the provider)")
+
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
