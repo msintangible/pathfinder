@@ -108,6 +108,42 @@ class KeywordSkipReason(BaseModel):
     reason: str
 
 
+class KeywordEvidence(BaseModel):
+    """
+    Why a job keyword is (or isn't) considered supported by a candidate
+    profile — see services/keyword_evidence.py::classify_keyword, which is
+    the only thing permitted to produce one of these. Every field is
+    derived deterministically from a fixed rule per status tier, never a
+    free-floating LLM guess, so the same profile+keyword always classifies
+    the same way.
+
+    status tiers, most to least direct:
+      - "exact": the keyword itself appears verbatim (case-insensitive) in
+        the profile's skill fields.
+      - "alias": the profile has a different but genuinely equivalent term
+        (see keyword_evidence.TECH_ALIASES) — e.g. job asks "ASP.NET Core",
+        candidate has "ASP.NET".
+      - "semantic": the keyword names a broad category and the profile has
+        one or more of that category's real member technologies (see
+        keyword_evidence.CATEGORY_MAP) — e.g. "relational databases"
+        satisfied by "Azure SQL"/"SQL Server". Deliberately a closed,
+        curated membership list, never an inferred/generated relationship
+        — this is what keeps "AWS" from ever satisfying "Terraform".
+      - "experience": a 3+-word keyword phrase whose significant words
+        mostly appear across the candidate's real bullets/descriptions,
+        even without a matching skill tag (reuses
+        keyword_matcher._keyword_appears_in's existing significant-word
+        logic). Never applied to 1-2 word keywords — see that function's
+        own docstring for why a short phrase needs an exact/alias/semantic
+        match, not a loose word-overlap one.
+      - "unsupported": none of the above — no genuine basis found.
+    """
+    keyword: str
+    status: Literal["exact", "alias", "semantic", "experience", "unsupported"]
+    confidence: float
+    evidence: list[str] = []
+
+
 class ProjectRankingEntry(BaseModel):
     """Why a project ranked where it did in the resume's Projects section —
     see relevance_ranker.rank_profile's ranking_reasons. matched_on is empty

@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from schemas.resume import KeywordEvidence
 
 # Every profile field that can hold a skill/technology term the candidate has.
 PROFILE_SKILL_FIELDS = (
@@ -32,25 +34,20 @@ _NESTED_SKILL_SECTIONS = {
 class KeywordReport:
     matched: list[str]
     missing: list[str]
-
-
-def _nested_terms(profile: dict) -> set[str]:
-    return {
-        term.strip().lower()
-        for section, fields in _NESTED_SKILL_SECTIONS.items()
-        for entry in (profile.get(section) or [])
-        for field in fields
-        for term in (entry.get(field) or [])
-        if term
-    }
+    # Why each job keyword classified as matched/missing — see
+    # services/keyword_evidence.py::classify_keyword. Defaulted so every
+    # existing call site constructing a KeywordReport directly (tests, and
+    # the after_report built in resume_generation_agent.py) keeps working
+    # unchanged; only match_keywords itself populates this today.
+    evidence: list[KeywordEvidence] = field(default_factory=list)
 
 
 def _job_terms(job: dict) -> dict[str, str]:
     # Dedup across job fields (e.g. "Python" in both skills and keywords) while
     # keeping the first-seen casing.
     job_terms: dict[str, str] = {}
-    for field in _JOB_KEYWORD_FIELDS:
-        for term in (job.get(field) or []):
+    for field_name in _JOB_KEYWORD_FIELDS:
+        for term in (job.get(field_name) or []):
             if not term:
                 continue
             key = term.strip().lower()
@@ -59,22 +56,26 @@ def _job_terms(job: dict) -> dict[str, str]:
 
 
 def match_keywords(profile: dict, job: dict) -> KeywordReport:
-    """Compare the job's skills/technologies/keywords against everything the candidate's profile lists.
-
-    Matching is case-insensitive; the original casing from the job posting is
-    preserved in the output since that's what downstream consumers display.
     """
-    profile_terms = {
-        term.strip().lower()
-        for field in PROFILE_SKILL_FIELDS
-        for term in (profile.get(field) or [])
-        if term
-    } | _nested_terms(profile)
+    Compare the job's skills/technologies/keywords against the candidate
+    profile via evidence-based classification (see
+    services/keyword_evidence.py::classify_keyword) — a keyword counts as
+    matched whenever it has real support at any tier (exact, alias,
+    semantic/category, or demonstrated-experience), not just a literal
+    substring match. `missing` is exactly the "unsupported" tier.
+
+    Matching is case-insensitive; the original casing from the job posting
+    is preserved in the output since that's what downstream consumers
+    display. Deferred import to avoid a circular import — keyword_evidence
+    itself imports several helpers from this module.
+    """
+    from services.keyword_evidence import classify_keyword
 
     job_terms = _job_terms(job)
-    matched = [original for key, original in job_terms.items() if key in profile_terms]
-    missing = [original for key, original in job_terms.items() if key not in profile_terms]
-    return KeywordReport(matched=matched, missing=missing)
+    evidence = [classify_keyword(original, profile) for original in job_terms.values()]
+    matched = [item.keyword for item in evidence if item.status != "unsupported"]
+    missing = [item.keyword for item in evidence if item.status == "unsupported"]
+    return KeywordReport(matched=matched, missing=missing, evidence=evidence)
 
 
 def unused_candidate_skills(profile: dict, job: dict) -> list[str]:
