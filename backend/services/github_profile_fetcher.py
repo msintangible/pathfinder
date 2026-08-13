@@ -30,13 +30,13 @@ def _profile_text(user: dict) -> str | None:
     return " · ".join(parts) if parts else None
 
 
-def _to_repo(raw: dict, readme: str | None) -> RawGitHubRepo | None:
+def _to_repo(raw: dict, readme: str | None, languages: list[str]) -> RawGitHubRepo | None:
     if not raw.get("name"):
         return None
     return RawGitHubRepo(
         name=raw["name"],
         description=raw.get("description"),
-        languages=[raw["language"]] if raw.get("language") else [],
+        languages=languages,
         topics=raw.get("topics") or [],
         readme=readme,
         url=raw.get("html_url"),
@@ -69,16 +69,53 @@ async def _fetch_readme(client: httpx.AsyncClient, raw: dict) -> str | None:
     return truncate_text(resp.text, _MAX_README_CHARS, "\n[... README truncated]") or None
 
 
+async def _fetch_languages(client: httpx.AsyncClient, raw: dict) -> list[str]:
+    """
+    Fetch a repo's full language breakdown (bytes per language) instead of
+    settling for GitHub's single "primary language" heuristic on the repo
+    list response — a repo that's mostly Python but genuinely includes
+    Dockerfile/Shell content otherwise loses those as ATS keywords entirely.
+    Falls back to just the primary `language` field if the repo has no
+    full_name or the request fails; never raises, same contract as
+    _fetch_readme. Languages are ordered by byte count descending, so the
+    dominant language still comes first.
+    """
+    primary = [raw["language"]] if raw.get("language") else []
+    full_name = raw.get("full_name")
+    if not full_name:
+        return primary
+    try:
+        resp = await client.get(f"{_GITHUB_API}/repos/{full_name}/languages")
+        resp.raise_for_status()
+        breakdown = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return primary
+    if not isinstance(breakdown, dict) or not breakdown:
+        return primary
+    return sorted(breakdown, key=breakdown.get, reverse=True)
+
+
+async def _fetch_repo_details(client: httpx.AsyncClient, raw: dict) -> tuple[str | None, list[str]]:
+    """One repo's README + language breakdown, fetched together so a single
+    repo's two extra calls stay adjacent rather than interleaving with every
+    other repo's calls."""
+    readme = await _fetch_readme(client, raw)
+    languages = await _fetch_languages(client, raw)
+    return readme, languages
+
+
 async def fetch_github_profile(github_url: str | None) -> tuple[str | None, list[RawGitHubRepo]]:
     """
     Fetch a public GitHub profile (bio) + top repos by star count, including
-    each repo's README (fetched concurrently to keep latency close to a
-    single round-trip despite up to _MAX_REPOS extra calls).
+    each repo's README and full language breakdown (fetched concurrently
+    across repos to keep latency close to a single round-trip despite up to
+    2x _MAX_REPOS extra calls).
 
     Never raises — a bad URL, a private/nonexistent user, a rate limit, or a
     network error all degrade to (None, []) so a flaky GitHub API never blocks
-    CV import. A single repo's README failing is handled separately inside
-    _fetch_readme, so one broken README never drops the whole repo.
+    CV import. A single repo's README/language fetch failing is handled
+    separately inside _fetch_readme/_fetch_languages, so one broken repo
+    never drops the whole fetch.
     """
     username = extract_username(github_url) if github_url else None
     if not username:
@@ -110,9 +147,12 @@ async def fetch_github_profile(github_url: str | None) -> tuple[str | None, list
             # the cap below.
             owned = [r for r in repos_json if not r.get("fork")]
             top = sorted(owned, key=lambda r: r.get("stargazers_count") or 0, reverse=True)[:_MAX_REPOS]
-            readmes = await asyncio.gather(*[_fetch_readme(client, raw) for raw in top])
+            details = await asyncio.gather(*[_fetch_repo_details(client, raw) for raw in top])
     except (httpx.HTTPError, ValueError):
         return None, []
 
-    repos = [repo for raw, readme in zip(top, readmes) if (repo := _to_repo(raw, readme)) is not None]
+    repos = [
+        repo for raw, (readme, languages) in zip(top, details)
+        if (repo := _to_repo(raw, readme, languages)) is not None
+    ]
     return profile_text, repos

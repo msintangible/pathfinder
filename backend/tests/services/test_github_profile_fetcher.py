@@ -169,7 +169,8 @@ async def test_fetches_readme_when_full_name_present(mock_client):
         "html_url": None, "topics": [],
     }]
     mock_client.get.side_effect = [
-        _response(user), _response(repos), _readme_response("# distill\nAn AI meeting tool."),
+        _response(user), _response(repos),
+        _readme_response("# distill\nAn AI meeting tool."), _response({}),
     ]
 
     _, result_repos = await fetch_github_profile("https://github.com/someone")
@@ -199,7 +200,9 @@ async def test_readme_fetch_failure_does_not_drop_the_repo(mock_client):
         "name": "distill", "full_name": "someone/distill", "stargazers_count": 5,
         "html_url": None, "topics": [],
     }]
-    mock_client.get.side_effect = [_response(user), _response(repos), _readme_response("", status_code=404)]
+    mock_client.get.side_effect = [
+        _response(user), _response(repos), _readme_response("", status_code=404), _response({}),
+    ]
 
     _, result_repos = await fetch_github_profile("https://github.com/someone")
 
@@ -216,7 +219,7 @@ async def test_readme_is_truncated_to_the_configured_limit(mock_client):
         "html_url": None, "topics": [],
     }]
     long_readme = "word " * 2000  # well past _MAX_README_CHARS
-    mock_client.get.side_effect = [_response(user), _response(repos), _readme_response(long_readme)]
+    mock_client.get.side_effect = [_response(user), _response(repos), _readme_response(long_readme), _response({})]
 
     _, result_repos = await fetch_github_profile("https://github.com/someone")
 
@@ -233,10 +236,55 @@ async def test_fetches_readmes_for_multiple_repos_matching_each_to_its_own_repo(
     ]
     mock_client.get.side_effect = [
         _response(user), _response(repos),
-        _readme_response("distill readme"), _readme_response("budget-wars readme"),
+        _readme_response("distill readme"), _response({}),
+        _readme_response("budget-wars readme"), _response({}),
     ]
 
     _, result_repos = await fetch_github_profile("https://github.com/someone")
 
     readme_by_name = {repo.name: repo.readme for repo in result_repos}
     assert readme_by_name == {"distill": "distill readme", "budget-wars": "budget-wars readme"}
+
+
+# ---------------------------------------------------------------------------
+# Full language breakdown (bytes per language, not just the primary language)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_full_language_breakdown_sorted_by_bytes_descending(mock_client):
+    user = {"name": "Someone"}
+    repos = [{
+        "name": "distill", "full_name": "someone/distill", "language": "Python",
+        "stargazers_count": 5, "html_url": None, "topics": [],
+    }]
+    breakdown = {"Python": 8000, "Dockerfile": 500, "Shell": 100}
+    mock_client.get.side_effect = [_response(user), _response(repos), _readme_response(""), _response(breakdown)]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert result_repos[0].languages == ["Python", "Dockerfile", "Shell"]
+
+
+@pytest.mark.anyio
+async def test_language_breakdown_falls_back_to_primary_language_on_fetch_failure(mock_client):
+    user = {"name": "Someone"}
+    repos = [{
+        "name": "distill", "full_name": "someone/distill", "language": "Python",
+        "stargazers_count": 5, "html_url": None, "topics": [],
+    }]
+    mock_client.get.side_effect = [_response(user), _response(repos), _readme_response(""), _response({}, status_code=404)]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert result_repos[0].languages == ["Python"]
+
+
+@pytest.mark.anyio
+async def test_language_breakdown_falls_back_to_primary_language_when_full_name_missing(mock_client):
+    user = {"name": "Someone"}
+    repos = [{"name": "distill", "language": "Python", "stargazers_count": 5, "html_url": None, "topics": []}]
+    mock_client.get.side_effect = [_response(user), _response(repos)]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert result_repos[0].languages == ["Python"]
