@@ -310,6 +310,107 @@ def test_synonym_phrasing_still_requires_real_evidence():
 
 
 # ---------------------------------------------------------------------------
+# Tier 4 — curated short (1-2 word) soft-skill/process concepts. These never
+# reach the generic 3+-word overlap check, so without a curated entry they'd
+# always be "unsupported" regardless of real evidence.
+# ---------------------------------------------------------------------------
+
+def test_collaboration_matches_git_code_review_bullet():
+    profile = {
+        "work_experience": [
+            {"bullets": ["Collaborated with the team via Git for version control and code reviews."]},
+        ],
+    }
+
+    result = classify_keyword("Collaboration", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "experience"
+
+
+def test_communication_matches_stakeholder_bullet():
+    profile = {"work_experience": [{"bullets": ["Gathered requirements directly from client stakeholders."]}]}
+
+    result = classify_keyword("Communication", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "experience"
+
+
+def test_implementation_matches_built_bullet():
+    profile = {"work_experience": [{"bullets": ["Built and shipped the authentication feature end to end."]}]}
+
+    result = classify_keyword("Implementation", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "experience"
+
+
+def test_delivery_matches_deployed_bullet():
+    profile = {"work_experience": [{"bullets": ["Deployed the service to production."]}]}
+
+    result = classify_keyword("Delivery", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "experience"
+
+
+def test_bare_databases_matches_a_named_db_product():
+    profile = {"databases": ["Redis"]}
+
+    result = classify_keyword("Databases", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "semantic"
+    assert result.evidence == ["Redis"]
+
+
+def test_ci_cd_matches_github_actions_mentioned_in_a_bullet():
+    profile = {"projects": [{"description": "Set up GitHub Actions to automate the test and deploy pipeline."}]}
+
+    result = classify_keyword("CI/CD", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "experience"
+
+
+def test_spoken_language_is_an_exact_match_skill_field():
+    profile = {"languages": ["Spanish (Conversational)"]}
+
+    result = classify_keyword("Spanish (Conversational)", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "exact"
+
+
+def test_research_matches_investigation_bullet():
+    profile = {"projects": [{"description": "Investigated AWS deployment options and built a proof of concept."}]}
+
+    result = classify_keyword("R&D", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "experience"
+
+
+def test_communication_matches_code_review_bullet():
+    profile = {"work_experience": [{"bullets": ["Participated in team code reviews and a company hackathon."]}]}
+
+    result = classify_keyword("Communication", profile)
+
+    assert result.status == "supported"
+    assert result.evidence_type == "experience"
+
+
+def test_short_concept_still_unsupported_without_any_evidence():
+    profile = {"technical_skills": ["Python"]}
+
+    result = classify_keyword("Collaboration", profile)
+
+    assert result.status == "unsupported"
+    assert result.evidence_type == "none"
+
+
+# ---------------------------------------------------------------------------
 # Batch wrapper
 # ---------------------------------------------------------------------------
 

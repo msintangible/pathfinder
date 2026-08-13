@@ -85,4 +85,5 @@ def _flatten_profile_text(profile: dict) -> str:
     for repo in profile.get("github_repositories") or []:
         parts.append(repo.get("description") or "")
         parts.append(repo.get("purpose") or "")
+    parts.extend(profile.get("recommendations_received") or [])
     return " ".join(parts)

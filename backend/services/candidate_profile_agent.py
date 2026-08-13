@@ -111,19 +111,34 @@ Rules:
   rather than inventing
   color.
 - certifications, awards, achievements, leadership_experience,
-  volunteer_work, publications, interests, and references each render as
-  their own resume section whenever populated, and are omitted entirely
-  when empty — there's no downside to filling one in when the input
-  genuinely supports it, so actively look for them rather than defaulting
-  to []: a "Certified..." or "Certificate in..." mention is a
-  certification even outside a dedicated certifications list; a hackathon
-  placement, a "Dean's List" mention, or a competition result is an award;
-  mentoring, leading a team/project, or organizing an event is leadership
-  experience; an "Interests" or "Outside of work" section on LinkedIn or a
-  portfolio is interests; anything reading like a formal reference contact
-  or "References available on request" belongs in references. Only extract
-  what's actually stated — never invent a certification, award, or
-  reference that isn't genuinely in the input.
+  volunteer_work, publications, languages, recommendations_received,
+  interests, and references each render as their own resume section
+  whenever populated, and are omitted entirely when empty — there's no
+  downside to filling one in when the input genuinely supports it, so
+  actively look for them rather than defaulting to []. When a LinkedIn
+  source is present, map explicitly from its own section names, since
+  LinkedIn is the most reliably structured source for these:
+    - LinkedIn "Licenses & Certifications" -> certifications (name, issuer,
+      date, credential URL if present).
+    - LinkedIn "Honors & Awards" -> awards.
+    - LinkedIn "Volunteering" -> volunteer_work (cause/organization/role).
+    - LinkedIn "Publications" -> publications.
+    - LinkedIn "Languages" -> languages, one entry per language, including
+      the stated proficiency when given (e.g. "Spanish (Conversational)"),
+      just the language name otherwise.
+    - LinkedIn "Recommendations received" -> recommendations_received: pull
+      the specific claim(s) a recommender makes about the candidate's real
+      skills/traits (e.g. "consistently the person the team turned to for
+      tricky debugging"), not the recommender's own name/title or generic
+      praise with no substance ("great to work with").
+  Outside a dedicated list, a "Certified..." or "Certificate in..." mention
+  is still a certification; a hackathon placement, a "Dean's List" mention,
+  or a competition result is an award; mentoring, leading a team/project, or
+  organizing an event is leadership experience; an "Interests" or "Outside
+  of work" section is interests; anything reading like a formal reference
+  contact or "References available on request" belongs in references. Only
+  extract what's actually stated — never invent a certification, award,
+  language, recommendation, or reference that isn't genuinely in the input.
 
 Schema:
 {
@@ -142,6 +157,7 @@ Schema:
   "devops_tools": [string],
   "ai_ml_tools": [string],
   "development_tools": [string],
+  "languages": [string],
   "work_experience": [
     {
       "title": string or null,
@@ -212,6 +228,7 @@ Schema:
   "publications": [string],
   "interests": [string],
   "references": [string],
+  "recommendations_received": [string],
   "links": {"key": "url"}
 }"""
 

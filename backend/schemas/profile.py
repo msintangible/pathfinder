@@ -156,6 +156,10 @@ class CandidateProfile(BaseModel):
     devops_tools: list[str] = []
     ai_ml_tools: list[str] = []
     development_tools: list[str] = []
+    # Spoken/written languages (e.g. "Spanish (Conversational)") — distinct
+    # from programming_languages above. A skill field like the others so it
+    # participates in ATS keyword matching (see keyword_matcher.PROFILE_SKILL_FIELDS).
+    languages: list[str] = []
 
     # Experience
     work_experience: list[WorkExperience] = []
@@ -175,6 +179,10 @@ class CandidateProfile(BaseModel):
     publications: list[str] = []
     interests: list[str] = []
     references: list[str] = []
+    # Short evidence snippets from recommendations/endorsements the candidate
+    # received (e.g. LinkedIn's "Recommendations" section) — real third-party
+    # evidence for soft-skill ATS keywords like Collaboration/Communication.
+    recommendations_received: list[str] = []
 
     # Links — e.g. {"linkedin": "...", "github": "...", "portfolio": "..."}
     links: dict[str, str] = {}
@@ -184,10 +192,10 @@ class CandidateProfile(BaseModel):
     @field_validator(
         "technical_skills", "soft_skills", "programming_languages", "frameworks",
         "libraries", "databases", "cloud_platforms", "devops_tools", "ai_ml_tools",
-        "development_tools", "work_experience", "education", "projects",
+        "development_tools", "languages", "work_experience", "education", "projects",
         "github_repositories", "open_source_contributions", "certifications",
         "awards", "achievements", "leadership_experience", "volunteer_work",
-        "publications", "interests", "references",
+        "publications", "interests", "references", "recommendations_received",
         mode="before",
     )
     @classmethod

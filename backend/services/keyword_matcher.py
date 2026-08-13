@@ -13,6 +13,7 @@ PROFILE_SKILL_FIELDS = (
     "devops_tools",
     "ai_ml_tools",
     "development_tools",
+    "languages",
 )
 
 # Every job field that can hold a required/preferred term.
@@ -250,5 +251,9 @@ def _flatten_candidate_profile_text(profile: dict) -> str:
     parts.extend(profile.get("volunteer_work") or [])
     parts.extend(profile.get("publications") or [])
     parts.extend(profile.get("interests") or [])
+    # Third-party evidence — a recommendation is someone else vouching for a
+    # trait/skill, real evidence for soft-skill ATS keywords same as a bullet
+    # the candidate wrote themselves.
+    parts.extend(profile.get("recommendations_received") or [])
 
     return " ".join(parts)

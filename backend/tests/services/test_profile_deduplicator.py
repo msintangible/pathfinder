@@ -186,6 +186,18 @@ def test_string_list_dedup_ignores_blank_entries():
     assert result["technical_skills"] == ["Python"]
 
 
+def test_dedupes_languages_and_recommendations_received():
+    profile = _profile(
+        languages=["Spanish (Conversational)", "spanish (conversational)"],
+        recommendations_received=["Great debugger.", "Great debugger.", "Excellent communicator."],
+    )
+
+    result = dedupe_profile(profile)
+
+    assert result["languages"] == ["Spanish (Conversational)"]
+    assert result["recommendations_received"] == ["Great debugger.", "Excellent communicator."]
+
+
 # ---------------------------------------------------------------------------
 # education / github_repositories / certifications
 # ---------------------------------------------------------------------------

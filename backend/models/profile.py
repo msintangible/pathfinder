@@ -67,6 +67,7 @@ class UserProfile(Base, PrimaryKeyMixin):
     devops_tools: Mapped[list | None] = mapped_column(JSONB, nullable=True)          # [str]
     ai_ml_tools: Mapped[list | None] = mapped_column(JSONB, nullable=True)           # [str]
     development_tools: Mapped[list | None] = mapped_column(JSONB, nullable=True)     # [str]
+    languages: Mapped[list | None] = mapped_column(JSONB, nullable=True)             # [str]
 
     work_experience: Mapped[list | None] = mapped_column(JSONB, nullable=True)       # [{ title, company, ... }]
     education: Mapped[list | None] = mapped_column(JSONB, nullable=True)             # [{ institution, degree, ... }]
@@ -81,6 +82,12 @@ class UserProfile(Base, PrimaryKeyMixin):
     leadership_experience: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # [str]
     volunteer_work: Mapped[list | None] = mapped_column(JSONB, nullable=True)        # [str]
     publications: Mapped[list | None] = mapped_column(JSONB, nullable=True)          # [str]
+    interests: Mapped[list | None] = mapped_column(JSONB, nullable=True)             # [str]
+    # "references" is a reserved word in SQL (FK constraint syntax) — quoted
+    # automatically by SQLAlchemy wherever this column is referenced, same as
+    # any other identifier; no special handling needed on the Python side.
+    references: Mapped[list | None] = mapped_column(JSONB, nullable=True)            # [str]
+    recommendations_received: Mapped[list | None] = mapped_column(JSONB, nullable=True)  # [str]
 
     links: Mapped[dict | None] = mapped_column(JSONB, nullable=True)                 # { linkedin, github, ... }
 

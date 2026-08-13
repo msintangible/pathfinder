@@ -22,8 +22,9 @@ _ENTRY_MATCH_THRESHOLD = 0.85
 _STRING_LIST_FIELDS = (
     "technical_skills", "soft_skills", "programming_languages", "frameworks",
     "libraries", "databases", "cloud_platforms", "devops_tools", "ai_ml_tools",
-    "development_tools", "open_source_contributions", "awards", "achievements",
+    "development_tools", "languages", "open_source_contributions", "awards", "achievements",
     "leadership_experience", "volunteer_work", "publications", "interests", "references",
+    "recommendations_received",
 )
 
 # How much of a bullet's significant words must already appear somewhere in

@@ -83,6 +83,15 @@ _CATEGORY_GROUPS: list[tuple[list[str], list[str]]] = [
         ["MongoDB", "DynamoDB", "Firebase", "Redis", "Cassandra", "Cosmos DB"],
     ),
     (
+        # Bare "Databases" (no relational/nosql qualifier) — satisfied by any
+        # concrete database technology, relational or not.
+        ["databases", "database", "database technologies", "database management", "database systems"],
+        [
+            "Azure SQL", "SQL Server", "MySQL", "PostgreSQL", "Oracle", "SQLite", "MariaDB", "Amazon RDS",
+            "MongoDB", "DynamoDB", "Firebase", "Redis", "Cassandra", "Cosmos DB",
+        ],
+    ),
+    (
         ["cloud platforms", "cloud computing", "cloud services", "cloud technologies"],
         ["AWS", "Azure", "Google Cloud", "GCP"],
     ),
@@ -149,6 +158,45 @@ _ACTIVITY_GROUPS: list[tuple[list[str], list[str]]] = [
             "clean architecture", "solid principles", "design pattern", "best practices",
             "software architecture", "code review", "unit test",
         ],
+    ),
+    # Short (1-2 word) soft-skill/process concepts below never reach the generic
+    # 3+-word overlap check (see classify_keyword's Tier 4 else-branch), so
+    # without a curated entry here they'd always classify unsupported no
+    # matter how much real evidence exists — the exact gap reported for
+    # "Collaboration" against a profile bullet reading "collaborating via Git
+    # for version control and code reviews".
+    (
+        ["collaboration", "team collaboration", "collaborative"],
+        ["team", "collaborat", "pair programming", "code review", "cross-functional"],
+    ),
+    (
+        # Widened per explicit user spec: client work, requirements gathering,
+        # team/code reviews, and hackathons all count as real communication
+        # evidence, not just the literal word "communicat(e/ion)".
+        ["communication", "communication skills", "verbal communication", "written communication"],
+        [
+            "communicat", "presented", "presentation", "stakeholder", "client",
+            "requirements gathering", "code review", "hackathon", "cross-functional",
+        ],
+    ),
+    (
+        ["implementation", "feature implementation", "implementing features"],
+        ["implement", "built", "developed", "engineered", "designed and built"],
+    ),
+    (
+        ["delivery", "project delivery", "software delivery"],
+        ["delivered", "deployed", "shipped", "launched", "released", "production"],
+    ),
+    (
+        ["ci/cd", "continuous integration", "continuous deployment", "continuous integration/continuous deployment", "cicd"],
+        [
+            "ci/cd", "continuous integration", "continuous deployment", "pipeline",
+            "github actions", "jenkins", "circleci", "gitlab ci",
+        ],
+    ),
+    (
+        ["research and development", "r&d", "research", "technical research"],
+        ["research", "investigat", "prototype", "proof of concept", "explored", "evaluated"],
     ),
 ]
 

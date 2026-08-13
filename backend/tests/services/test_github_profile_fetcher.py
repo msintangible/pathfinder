@@ -86,19 +86,33 @@ async def test_successful_fetch_builds_profile_text_and_repos(mock_client):
 
 
 @pytest.mark.anyio
-async def test_caps_repos_at_ten_sorted_by_stars(mock_client):
+async def test_caps_repos_at_twenty_sorted_by_stars(mock_client):
     user = {"name": "Someone"}
     repos = [
         {"name": f"repo-{i}", "stargazers_count": i, "html_url": None, "topics": []}
-        for i in range(15)
+        for i in range(25)
     ]
     mock_client.get.side_effect = [_response(user), _response(repos)]
 
     _, result_repos = await fetch_github_profile("https://github.com/someone")
 
-    assert len(result_repos) == 10
-    assert result_repos[0].name == "repo-14"  # highest stars first
+    assert len(result_repos) == 20
+    assert result_repos[0].name == "repo-24"  # highest stars first
     assert result_repos[-1].name == "repo-5"
+
+
+@pytest.mark.anyio
+async def test_forks_are_excluded_even_when_starred(mock_client):
+    user = {"name": "Someone"}
+    repos = [
+        {"name": "a-fork", "fork": True, "stargazers_count": 100, "html_url": None, "topics": []},
+        {"name": "own-project", "fork": False, "stargazers_count": 0, "html_url": None, "topics": []},
+    ]
+    mock_client.get.side_effect = [_response(user), _response(repos)]
+
+    _, result_repos = await fetch_github_profile("https://github.com/someone")
+
+    assert [r.name for r in result_repos] == ["own-project"]
 
 
 @pytest.mark.anyio

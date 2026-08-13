@@ -8,7 +8,10 @@ from schemas.profile import RawGitHubRepo
 from services.text_utils import truncate_text
 
 _GITHUB_API = "https://api.github.com"
-_MAX_REPOS = 10
+# Was 10 — raised after a real user's own repos got truncated below their
+# actual count. Still bounded (not "all repos") to keep the analysis prompt's
+# size predictable; _MAX_README_CHARS caps each repo's own contribution.
+_MAX_REPOS = 20
 # Keeps the extraction prompt bounded even with up to _MAX_REPOS READMEs
 # attached — most READMEs' problem/architecture/impact framing lives in the
 # intro and feature list, well within this budget.
@@ -102,7 +105,11 @@ async def fetch_github_profile(github_url: str | None) -> tuple[str | None, list
             if not isinstance(repos_json, list):
                 return profile_text, []
 
-            top = sorted(repos_json, key=lambda r: r.get("stargazers_count") or 0, reverse=True)[:_MAX_REPOS]
+            # Forks carry none of the candidate's own work by default — a
+            # starred fork would otherwise take a real project's slot under
+            # the cap below.
+            owned = [r for r in repos_json if not r.get("fork")]
+            top = sorted(owned, key=lambda r: r.get("stargazers_count") or 0, reverse=True)[:_MAX_REPOS]
             readmes = await asyncio.gather(*[_fetch_readme(client, raw) for raw in top])
     except (httpx.HTTPError, ValueError):
         return None, []

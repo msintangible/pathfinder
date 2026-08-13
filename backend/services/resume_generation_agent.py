@@ -309,8 +309,10 @@ what you did instead of the resume itself:
   If you left a section entirely unchanged because it already covered the
   job well, do not write a highlight for it — silence means no change.
 - keywords_skipped: one entry per missing_keyword you deliberately did not
-  weave in, with a one-sentence reason tied to the actual gap ("Candidate
-  profile has no demonstrated Redis experience", not "not relevant").
+  weave in, with a one-sentence reason tied to the actual gap, addressed
+  directly to the candidate like the rest of your reasoning above ("You
+  don't have demonstrated Redis experience", not "Candidate profile has no
+  demonstrated Redis experience" or "not relevant").
   Never include a missing_keyword here that you did in fact address
   somewhere in editable_blocks.
 

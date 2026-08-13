@@ -46,6 +46,7 @@ class ProfileRepository:
             devops_tools=analysis.get("devops_tools") or None,
             ai_ml_tools=analysis.get("ai_ml_tools") or None,
             development_tools=analysis.get("development_tools") or None,
+            languages=analysis.get("languages") or None,
             work_experience=analysis.get("work_experience") or None,
             education=analysis.get("education") or None,
             projects=analysis.get("projects") or None,
@@ -57,6 +58,9 @@ class ProfileRepository:
             leadership_experience=analysis.get("leadership_experience") or None,
             volunteer_work=analysis.get("volunteer_work") or None,
             publications=analysis.get("publications") or None,
+            interests=analysis.get("interests") or None,
+            references=analysis.get("references") or None,
+            recommendations_received=analysis.get("recommendations_received") or None,
             links=analysis.get("links") or None,
         )
         self._session.add(profile)
