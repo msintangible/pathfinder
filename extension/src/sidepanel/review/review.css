@@ -8,14 +8,16 @@
 .review-screen {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
 }
 
-.review-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-8);
+/* Fixed header: pf-header (logo/wordmark, shared across every screen) plus
+ * this screen's own heading block. Never scrolls — only .review-scroll does,
+ * so a long diff or an expanded fit warning can't push the header or the
+ * Download button off-screen. */
+.review-header {
+  flex-shrink: 0;
+  padding: var(--space-8) var(--space-8) var(--space-6);
 }
 
 .review-heading {
@@ -29,7 +31,20 @@
 .review-subtitle {
   font-size: 14px;
   color: var(--muted);
-  margin: 0 0 var(--space-8);
+  margin: 0 0 var(--space-5);
+}
+
+.review-reassurance {
+  font-size: 12.5px;
+  color: var(--label);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.review-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-8);
 }
 
 .review-section-label {
@@ -38,13 +53,25 @@
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--label);
-  margin: 0 0 var(--space-3);
+  margin: 8px 0 var(--space-5);
+}
+
+.review-section-label:first-child {
+  margin-top: 0;
+}
+
+/* Fixed footer: kept-count, the revert/download notice (when relevant), and
+ * the Download button — always reachable regardless of scroll position. */
+.review-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-7) var(--space-8);
 }
 
 .review-kept-count {
   font-size: 13px;
   color: var(--muted);
-  margin: var(--space-4) 0 var(--space-7);
+  margin: 0 0 var(--space-5);
 }
 
 /* Same amber "informational catch" pattern as detection.css's .det-notice —
@@ -68,8 +95,4 @@
   color: var(--amber-text);
   line-height: 1.55;
   margin: 0;
-}
-
-.review-download-btn {
-  margin-top: auto;
 }

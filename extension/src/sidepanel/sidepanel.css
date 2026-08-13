@@ -5,8 +5,11 @@
   --border: #e4e4e2;
   --border-subtle: #ececea;
   --text: #1a1a1a;
+  --text-3: #3a3a3a; /* README --ink3 — demoted text: revert-button label, reverted-row headline */
   --muted: #6b6b69;
   --label: #8a8a88;
+  --faint: #a0a09e; /* README --faint — dimmer than --label: "was:" line, URL text */
+  --outline: #cfcfcd; /* README --outline — outlined secondary/pill button borders */
   --hover: #f2f2f0;
 
   /* Neutral filled button (default action — not "AI acting now") */
@@ -18,9 +21,17 @@
   --accent: #b84a33;
   --accent-on: #ffffff;
 
-  /* Amber — informational catch (unknown ATS, duplicate listing). Not an error. */
+  /* Amber — informational catch (unknown ATS, duplicate listing, fit warning).
+     Not an error. --amber-text is README's --amberBody (the general text
+     tone); --amber-ink is its darker --amberInk (headline/label emphasis) —
+     added for the fit warning banner, which is the first amber component to
+     need both tones distinguished. */
   --amber-bg: #faf3e6;
+  --amber-border: #efdfbc;
+  --amber-ink: #8a5712;
   --amber-text: #7a5a2a;
+  --amber-hair: #e8d6ae;
+  --amber-chip: #f3e8d0;
 
   /* Red — genuine failure only (backend down, parse failure). */
   --red: #cf3a3a;
@@ -68,8 +79,11 @@
     --border: #282a30;
     --border-subtle: #26282e;
     --text: #ededeb;
+    --text-3: #c6c6c4;
     --muted: #a2a2a0;
     --label: #8a8a88;
+    --faint: #6c6c6a;
+    --outline: #3a3d44;
     --hover: #282a30;
 
     --fill: #ededeb;
@@ -79,7 +93,11 @@
     --accent-on: #ffffff;
 
     --amber-bg: #2a2312;
+    --amber-border: #473a1e;
+    --amber-ink: #e6b465;
     --amber-text: #c9a969;
+    --amber-hair: #3d3319;
+    --amber-chip: #33290f;
 
     --red: #ec6a63;
 
@@ -450,36 +468,61 @@ body {
  * wired into a real screen — Screen 4 does that.
  * ------------------------------------------------------------------------ */
 .pf-diff-row {
-  margin-bottom: var(--space-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  margin-bottom: 18px;
 }
 
 .pf-diff-row__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
 }
 
 .pf-diff-row__reason {
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 11px;
+  color: var(--label);
   line-height: 1.4;
+}
+
+/* Bare hook, styled fully here rather than via the shared .pf-btn--pill —
+   this is a smaller, denser button (12px/4px-11px) than that component's
+   other uses (e.g. idle screen's "View profile"). */
+.pf-diff-row__revert {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: transparent;
+  border: 1px solid var(--outline);
+  border-radius: 6px;
+  padding: 4px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pf-diff-row__revert:hover {
+  background: var(--hover);
 }
 
 .pf-diff-row__new {
   background: var(--diff-bg);
-  border-radius: var(--radius);
-  padding: var(--space-6) var(--space-7);
-  font-size: 14px;
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 13.5px;
   color: var(--text);
   line-height: 1.5;
+  margin-bottom: 9px;
 }
 
 .pf-diff-row__old {
-  margin: var(--space-2) 0 0;
+  margin: 0;
   font-size: 12px;
-  color: var(--label);
+  color: var(--faint);
+  line-height: 1.45;
 }
 
 .pf-diff-row__old-text {
@@ -490,10 +533,181 @@ body {
    content, so it drops the accent-tinted diff highlight — that tint means
    "AI acting now" everywhere else in the product and would be a lie here. */
 .pf-diff-row__new--original {
-  background: var(--hover);
-  color: var(--muted);
+  background: transparent;
+  color: var(--text-3);
+  padding: 0;
 }
 
-.pf-diff-row--reverted {
+/* ---------------------------------------------------------------------------
+ * Fit Warning banner — Screen 13. Sits above the diff on the Review changes
+ * screen when the tailored resume is a significant stretch for the role
+ * (see review/buildGaps.js). Reuses the amber "informational catch" pattern
+ * (.det-notice/.review-notice) at card level — border/radius come from the
+ * same --radius token as every other card in the system — plus the four
+ * amber tokens added alongside it for the header/body two-tone amber text
+ * and the divider/chip surfaces this component specifically needs.
+ * ------------------------------------------------------------------------ */
+.pf-fitwarn {
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: var(--space-8);
+}
+
+.pf-fitwarn__top {
+  padding: 13px 14px;
+}
+
+.pf-fitwarn__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.pf-fitwarn__info {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1.5px solid var(--amber-ink);
+  border-radius: 50%;
+  color: var(--amber-ink);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pf-fitwarn__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.pf-fitwarn__headline {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--amber-ink);
+  line-height: 1.35;
+  margin: 0 0 4px;
+}
+
+.pf-fitwarn__detail {
+  font-size: 13px;
+  color: var(--amber-text);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.pf-fitwarn__dismiss {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: -2px -3px 0 0;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--amber-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pf-fitwarn__dismiss:hover {
+  background: var(--amber-chip);
+}
+
+.pf-fitwarn__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 11px 0 0 25px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--amber-ink);
+  cursor: pointer;
+}
+
+.pf-fitwarn__toggle:hover {
+  opacity: 0.72;
+}
+
+.pf-fitwarn__caret {
+  display: inline-flex;
+  transition: transform 160ms ease;
+}
+
+.pf-fitwarn__caret--open {
+  transform: rotate(180deg);
+}
+
+.pf-fitwarn__body {
+  border-top: 1px solid var(--amber-hair);
+  padding: 4px 14px 13px;
+}
+
+.pf-fitwarn__group {
+  padding-top: 12px;
+}
+
+.pf-fitwarn__group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.pf-fitwarn__theme {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+}
+
+.pf-fitwarn__count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--amber-text);
+}
+
+.pf-fitwarn__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.pf-fitwarn__chip {
+  font-size: 12px;
+  color: var(--amber-text);
+  background: var(--amber-chip);
+  border-radius: 5px;
+  padding: 4px 8px;
+}
+
+.pf-fitwarn__reason {
+  font-size: 12px;
+  color: var(--amber-text);
+  line-height: 1.45;
   opacity: 0.85;
+  margin: 0;
+}
+
+.pf-fitwarn__closing {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--amber-hair);
+  font-size: 12.5px;
+  color: var(--amber-text);
+  line-height: 1.5;
 }

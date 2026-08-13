@@ -19,13 +19,20 @@
  * is real and can't be closed from this side, so once any row is reverted,
  * downloadNotice() surfaces it plainly next to the Download button instead
  * of leaving the button to imply otherwise.
+ *
+ * The Fit Warning banner (Screen 13) sits above the diff when buildGaps.js
+ * decides the tailored resume is a significant stretch — see that module
+ * for why it's a single ungrouped bucket today, not the themed groups the
+ * design shows.
  */
 
 import { loadProfile } from "../../shared/profileApi.js";
 import { pfHeader } from "../shared/header.js";
 import { diffChangeRow } from "../shared/diffChangeRow.js";
+import { fitWarningBanner } from "../shared/fitWarningBanner.js";
 import { openResume } from "../shared/openResume.js";
 import { buildChanges } from "./buildChanges.js";
+import { buildGaps } from "./buildGaps.js";
 
 // Looked up fresh on every call rather than cached at module scope — this
 // module is meant to be imported *by* detection/index.js (not directly, with
@@ -73,25 +80,40 @@ function downloadNotice() {
   return el;
 }
 
-function buildScreen(changes, title, company, downloadUrl) {
+function buildScreen(changes, title, company, downloadUrl, gaps) {
   const screen = document.createElement("div");
   screen.className = "review-screen";
-  screen.appendChild(pfHeader());
 
-  const main = document.createElement("div");
-  main.className = "review-main";
+  const header = document.createElement("div");
+  header.className = "review-header";
+  header.appendChild(pfHeader());
 
   const heading = document.createElement("h2");
   heading.className = "review-heading";
   heading.textContent = "Review changes";
-  main.appendChild(heading);
+  header.appendChild(heading);
 
   const subtitleText = [title, company].filter(Boolean).join(" · ");
   if (subtitleText) {
     const subtitle = document.createElement("p");
     subtitle.className = "review-subtitle";
     subtitle.textContent = subtitleText;
-    main.appendChild(subtitle);
+    header.appendChild(subtitle);
+  }
+
+  const reassurance = document.createElement("p");
+  reassurance.className = "review-reassurance";
+  reassurance.textContent =
+    "Pathfinder rewords and reorders facts already in your profile. It never adds experience you don't have.";
+  header.appendChild(reassurance);
+
+  screen.appendChild(header);
+
+  const scroll = document.createElement("div");
+  scroll.className = "review-scroll";
+
+  if (gaps) {
+    scroll.appendChild(fitWarningBanner(gaps));
   }
 
   const reverted = new Set();
@@ -99,8 +121,8 @@ function buildScreen(changes, title, company, downloadUrl) {
   const notice = downloadNotice();
 
   changes.forEach((change, i) => {
-    main.appendChild(sectionLabel(change.section));
-    main.appendChild(
+    scroll.appendChild(sectionLabel(change.section));
+    scroll.appendChild(
       diffChangeRow({
         reason: change.reason,
         newText: change.newText,
@@ -115,16 +137,20 @@ function buildScreen(changes, title, company, downloadUrl) {
     );
   });
 
-  main.appendChild(countLine);
-  main.appendChild(notice);
+  screen.appendChild(scroll);
+
+  const footer = document.createElement("div");
+  footer.className = "review-footer";
+  footer.appendChild(countLine);
+  footer.appendChild(notice);
 
   const downloadBtn = document.createElement("button");
   downloadBtn.className = "review-download-btn pf-btn pf-btn--block pf-btn--fill";
   downloadBtn.textContent = "Download resume";
   downloadBtn.addEventListener("click", () => openResume(downloadUrl));
-  main.appendChild(downloadBtn);
+  footer.appendChild(downloadBtn);
 
-  screen.appendChild(main);
+  screen.appendChild(footer);
   return screen;
 }
 
@@ -161,8 +187,9 @@ export async function showReviewScreen({ result, title, company }) {
 
   const profile = await loadProfile();
   const changes = buildChanges(profile, result.optimized_resume, result.report?.highlights);
+  const gaps = buildGaps(result.matched_keywords, result.missing_keywords, result.added_keywords);
 
   root.innerHTML = "";
-  root.appendChild(buildScreen(changes, title, company, result.download_url));
+  root.appendChild(buildScreen(changes, title, company, result.download_url, gaps));
   root.hidden = false;
 }

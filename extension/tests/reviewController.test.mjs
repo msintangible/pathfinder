@@ -35,6 +35,9 @@ const RESULT = {
       { section: "Skills", summary: "Reordered to lead with top skills", impact: "medium" },
     ],
   },
+  matched_keywords: ["SQL", "Power BI", "Reporting", "Excel", "Data cleaning", "Dashboards", "Stakeholders", "Analysis"],
+  missing_keywords: ["Tableau", "Python"],
+  added_keywords: [],
   download_url: "/v1/resumes/job-1/download",
 };
 
@@ -91,6 +94,12 @@ await test("renders header, heading, job subtitle, and one row per confidently-m
   assert(root.textContent.includes("PROFESSIONAL SUMMARY"), "summary section label (rendered uppercase)");
   assert(root.textContent.includes("SKILLS"), "skills section label (rendered uppercase)");
   assert(root.textContent.includes("2 of 2 changes kept"), "kept count starts at all changes kept");
+  assert(
+    root.textContent.includes(
+      "Pathfinder rewords and reorders facts already in your profile. It never adds experience you don't have."
+    ),
+    "reassurance copy present verbatim"
+  );
 });
 
 await test("claims the panel: hides legacy/idle/detection/loading roots", async () => {
@@ -125,15 +134,24 @@ await test("Revert actually swaps the row's own displayed text, not just its lab
   const row = root.querySelector(".pf-diff-row");
   const primary = row.querySelector(".pf-diff-row__new");
   const secondary = row.querySelector(".pf-diff-row__old");
+  const reasonEl = row.querySelector(".pf-diff-row__reason");
   const originalNewText = primary.textContent;
+  const originalReason = reasonEl.textContent;
 
   assert(secondary.textContent.startsWith("was: "), "un-reverted: secondary line shows the original");
+  assert(secondary.hidden === false, "un-reverted: secondary line is visible");
 
   row.querySelector(".pf-diff-row__revert").click();
   assert(primary.textContent !== originalNewText, "reverted: primary text switches away from the AI's version");
   assert(primary.classList.contains("pf-diff-row__new--original"), "reverted: primary box drops the AI-content styling");
+  assert(reasonEl.textContent === "Reverted to original", "reverted: reason line names the state");
+  assert(secondary.hidden === false, "reverted: secondary line stays visible — the suggested-vs-chosen contrast is the trust receipt and must survive revert (intentional deviation from Pathfinder Diff.dc.html)");
   assert(secondary.textContent.startsWith("AI suggested: "), "reverted: secondary line now shows the AI's version");
   assert(secondary.textContent.includes(originalNewText), "reverted: the AI's version is still visible, just demoted");
+
+  row.querySelector(".pf-diff-row__revert").click();
+  assert(reasonEl.textContent === originalReason, "restored: reason line goes back to the real change reason");
+  assert(secondary.textContent.startsWith("was: "), "restored: secondary line goes back to showing the original");
 });
 
 await test("the download-still-includes-everything notice only appears once something is reverted", async () => {
@@ -180,6 +198,91 @@ await test("missing title/company: no subtitle line rendered, no crash", async (
   const { root, showReviewScreen } = await mount();
   await showReviewScreen({ result: RESULT });
   assert(root.querySelector(".review-subtitle") === null, "no subtitle element when title/company are absent");
+});
+
+await test("fit warning: under the 40% gap threshold, no banner renders", async () => {
+  const { root, showReviewScreen } = await mount();
+  await showReviewScreen({ result: RESULT, title: "Data Analyst", company: "Reperio Human Capital" });
+  assert(root.querySelector(".pf-fitwarn") === null, "2 of 10 missing (20%) stays below threshold");
+});
+
+await test("fit warning: over the 40% gap threshold, banner renders collapsed with real counts", async () => {
+  const { root, showReviewScreen } = await mount();
+  const result = {
+    ...RESULT,
+    matched_keywords: ["SQL", "Excel"],
+    missing_keywords: ["Tableau", "Python", "AWS", "Kubernetes", "Terraform"],
+    added_keywords: [],
+  };
+  await showReviewScreen({ result, title: "Data Analyst", company: "Reperio Human Capital" });
+
+  const banner = root.querySelector(".pf-fitwarn");
+  assert(banner, "5 of 7 missing (71%) clears threshold — banner renders");
+  assert(banner.textContent.includes("This role is a significant stretch"), "headline present verbatim");
+  assert(banner.textContent.includes("5 of 7 core requirements aren't in your background yet."), "real counts, not placeholder numbers");
+  assert(banner.querySelector(".pf-fitwarn__body").hidden === true, "collapsed by default");
+  assert(banner.querySelector(".pf-fitwarn__toggle").getAttribute("aria-expanded") === "false", "aria-expanded reflects collapsed state");
+});
+
+await test("fit warning: added_keywords count as no-longer-missing, same as the backend's own after-tailoring view", async () => {
+  const { root, showReviewScreen } = await mount();
+  const result = {
+    ...RESULT,
+    matched_keywords: ["SQL", "Excel"],
+    // 5 originally missing, but 3 got woven into the resume from real profile content —
+    // only 2 should still count as a gap.
+    missing_keywords: ["Tableau", "Python", "AWS", "Kubernetes", "Terraform"],
+    added_keywords: ["AWS", "Kubernetes", "Terraform"],
+  };
+  await showReviewScreen({ result, title: "Data Analyst", company: "Reperio Human Capital" });
+
+  const banner = root.querySelector(".pf-fitwarn");
+  assert(banner === null, "2 of 7 missing (29%) after crediting added_keywords stays below threshold");
+});
+
+await test("fit warning: toggle expands to grouped chips, no invented reasons for the flat backend list", async () => {
+  const { root, showReviewScreen } = await mount();
+  const result = {
+    ...RESULT,
+    matched_keywords: ["SQL", "Excel"],
+    missing_keywords: ["Tableau", "Python", "AWS", "Kubernetes", "Terraform"],
+    added_keywords: [],
+  };
+  await showReviewScreen({ result, title: "Data Analyst", company: "Reperio Human Capital" });
+
+  const banner = root.querySelector(".pf-fitwarn");
+  const toggle = banner.querySelector(".pf-fitwarn__toggle");
+  const body = banner.querySelector(".pf-fitwarn__body");
+
+  toggle.click();
+  assert(body.hidden === false, "expands on click");
+  assert(toggle.getAttribute("aria-expanded") === "true", "aria-expanded flips");
+  assert(toggle.textContent.includes("Hide what's missing"), "toggle label flips");
+
+  const chips = [...body.querySelectorAll(".pf-fitwarn__chip")].map((c) => c.textContent);
+  assert(chips.length === 5, "one chip per still-missing keyword");
+  assert(chips.includes("Tableau") && chips.includes("Terraform"), "real keyword text, not fabricated categories");
+  assert(body.querySelectorAll(".pf-fitwarn__reason").length === 0, "no reason line — the backend gives no reason to show, so none is invented");
+  assert(body.textContent.includes("Pathfinder won't invent experience you don't have."), "closing line present verbatim");
+
+  toggle.click();
+  assert(body.hidden === true, "collapses again on second click");
+});
+
+await test("fit warning: dismiss hides the banner without touching the diff below it", async () => {
+  const { root, showReviewScreen } = await mount();
+  const result = {
+    ...RESULT,
+    matched_keywords: ["SQL", "Excel"],
+    missing_keywords: ["Tableau", "Python", "AWS", "Kubernetes", "Terraform"],
+    added_keywords: [],
+  };
+  await showReviewScreen({ result, title: "Data Analyst", company: "Reperio Human Capital" });
+
+  const banner = root.querySelector(".pf-fitwarn");
+  banner.querySelector(".pf-fitwarn__dismiss").click();
+  assert(banner.hidden === true, "banner hides on dismiss");
+  assert(root.querySelectorAll(".pf-diff-row").length === 2, "diff rows untouched by dismissing the banner");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
