@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.rate_limit import default_rate_limit
 from core.security import create_anonymous_token
 from database.session import get_db
 from schemas.auth import TokenResponse
@@ -9,7 +10,7 @@ from services.repository.user_repository import UserRepository
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/anonymous", response_model=TokenResponse)
+@router.post("/anonymous", response_model=TokenResponse, dependencies=[Depends(default_rate_limit)])
 async def create_anonymous_session(session: AsyncSession = Depends(get_db)) -> TokenResponse:
     """
     Issue a long-lived anonymous identity — no email/password required.

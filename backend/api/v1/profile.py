@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.rate_limit import default_rate_limit
 from core.security import get_current_user
 from database.session import get_db
 from models.user import User
@@ -49,7 +50,7 @@ def _save_source_document(file_bytes: bytes, extension: str) -> str:
     return LocalResumeStorage().save(file_bytes, f"source-{uuid.uuid4().hex}.{extension}")
 
 
-@router.post("/import", response_model=ProfileImportResponse)
+@router.post("/import", response_model=ProfileImportResponse, dependencies=[Depends(default_rate_limit)])
 async def import_profile(
     file: UploadFile | None = None,
     linkedin_url: Annotated[HttpUrl | None, Form()] = None,

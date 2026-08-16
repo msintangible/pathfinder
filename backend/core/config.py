@@ -1,5 +1,8 @@
 from functools import lru_cache
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_JWT_SECRET = "change-me-in-production"
 
 
 class Settings(BaseSettings):
@@ -25,7 +28,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # JWT
-    jwt_secret_key: str = "change-me-in-production"
+    jwt_secret_key: str = _DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 30
@@ -54,6 +57,15 @@ class Settings(BaseSettings):
     # Rate limits (requests per minute)
     rate_limit_default: int = 60
     rate_limit_generation: int = 10
+
+    @model_validator(mode="after")
+    def _require_real_jwt_secret_in_production(self) -> "Settings":
+        if self.environment == "production" and self.jwt_secret_key == _DEFAULT_JWT_SECRET:
+            raise ValueError(
+                "JWT_SECRET_KEY is still the default value. Set a real random secret "
+                "before running with ENVIRONMENT=production."
+            )
+        return self
 
 
 @lru_cache

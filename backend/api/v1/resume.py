@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.rate_limit import generation_rate_limit
 from core.security import get_current_user, get_current_user_allow_query_token
 from database.session import get_db
 from models.job import Job
@@ -67,7 +68,7 @@ def _render_resume(profile: UserProfile, result: dict) -> tuple[bytes, str, bool
     return pdf_bytes, "pdf", False, rendered_resume
 
 
-@router.post("/generate", response_model=ResumeGenerationResponse)
+@router.post("/generate", response_model=ResumeGenerationResponse, dependencies=[Depends(generation_rate_limit)])
 async def generate_resume(
     body: GenerateResumeRequest,
     session: AsyncSession = Depends(get_db),
