@@ -1,4 +1,5 @@
-# Test-only dependencies. The extension itself has no build step and ships as
-# plain JS; node_modules exists solely to run `npm test` (jsdom).
+# Dev-tooling dependencies only. The extension itself has no build step and
+# ships as plain JS; node_modules exists to run `npm test` (jsdom) and
+# `npm run icons` (sharp) — generated icons/ output is committed.
 node_modules/
 package-lock.json

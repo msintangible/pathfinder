@@ -313,36 +313,14 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * Shared screen header (P-badge + wordmark) — identical across every screen
+ * Shared screen header (Pathfinder lockup) — identical across every screen
  * in the redesign, so it lives here rather than duplicated per screen.
  * ------------------------------------------------------------------------ */
 .pf-header {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
   padding: var(--space-7) var(--space-8);
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.pf-header__badge {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: var(--fill);
-  color: var(--fill-on);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.5px;
-}
-
-.pf-header__name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -0.2px;
 }
 
 /* ---------------------------------------------------------------------------

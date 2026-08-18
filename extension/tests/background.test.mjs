@@ -28,6 +28,7 @@ function createChromeMock() {
   const chrome = {
     runtime: {
       onInstalled: { addListener: () => {} },
+      onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} },
     },
     sidePanel: { setPanelBehavior: async () => {} },

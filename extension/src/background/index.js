@@ -1,7 +1,7 @@
 /**
  * Service worker entry point (Manifest V3).
  *
- * Sole responsibility: message routing + badge + tab lifecycle.
+ * Sole responsibility: message routing + badge + toolbar icon + tab lifecycle.
  * All storage logic → storage.js. All network logic → api.js.
  *
  * MV3 service workers are non-persistent (killed after ~30s idle). No
@@ -20,7 +20,49 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch((err) => console.error("[Pathfinder]", err));
+  ensureOffscreenDocument();
 });
+
+// onInstalled doesn't fire on a normal browser restart — the offscreen
+// document (unlike service-worker state) doesn't survive that either, so
+// it needs re-creating here too.
+chrome.runtime.onStartup.addListener(() => {
+  ensureOffscreenDocument();
+});
+
+// ---------------------------------------------------------------------------
+// Toolbar icon — light/dark tracks the OS toolbar theme, not the extension's
+// own light/dark CSS (Chrome doesn't expose that split for action icons).
+// The service worker has no window/matchMedia, so an offscreen document
+// (offscreen.html/.js) does the detection and reports back via messaging.
+// ---------------------------------------------------------------------------
+
+const OFFSCREEN_URL = "src/background/offscreen.html";
+
+/** Idempotent: safe to call from any listener that might run before the
+ * offscreen document exists yet. */
+async function ensureOffscreenDocument() {
+  try {
+    await chrome.offscreen.createDocument({
+      url: OFFSCREEN_URL,
+      reasons: ["MATCH_MEDIA"],
+      justification: "Detect prefers-color-scheme to choose the toolbar icon variant.",
+    });
+  } catch (err) {
+    // Chrome throws if a document already exists — that's the expected
+    // steady-state case, not a real failure.
+    if (!String(err?.message).includes("single offscreen")) {
+      console.error("[Pathfinder]", err);
+    }
+  }
+}
+
+function setToolbarIcon(isDark) {
+  const path = isDark
+    ? { 16: "icons/icon16-dark.png", 32: "icons/icon32-dark.png" }
+    : { 16: "icons/icon16.png", 32: "icons/icon32.png" };
+  chrome.action.setIcon({ path }).catch((err) => console.error("[Pathfinder]", err));
+}
 
 // ---------------------------------------------------------------------------
 // Message router — every message has { type, payload } shape.
@@ -67,6 +109,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "GENERATE_RESUME":
       generateResume(message.payload).then(sendResponse);
       return true;
+
+    case "COLOR_SCHEME_CHANGED":
+      setToolbarIcon(message.payload?.isDark);
+      sendResponse({ ok: true });
+      return false;
 
     default:
       sendResponse({ ok: false, error: `Unknown type: ${message?.type}` });
