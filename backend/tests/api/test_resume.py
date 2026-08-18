@@ -141,6 +141,7 @@ def test_generate_succeeds_for_own_profile(client, tmp_path):
     with patch("api.v1.resume.JobRepository") as mock_job_repo_cls, \
          patch("api.v1.resume.ProfileRepository") as mock_profile_repo_cls, \
          patch("api.v1.resume.ResumeGenerationAgent") as mock_agent_cls, \
+         patch("api.v1.resume.GeminiUsageRepository") as mock_usage_repo_cls, \
          patch(
              "api.v1.resume.render_within_page_limit",
              return_value=(b"%PDF-1.4 fake", _GENERATION_RESULT["optimized_resume"]),
@@ -152,6 +153,7 @@ def test_generate_succeeds_for_own_profile(client, tmp_path):
             return_value=UserProfile(id=profile_id, user_id=_OWNER_ID)
         )
         mock_agent_cls.return_value.generate = AsyncMock(return_value=_GENERATION_RESULT)
+        mock_usage_repo_cls.return_value.increment_and_check = AsyncMock(return_value=1)
         mock_storage_cls.return_value.save.return_value = str(tmp_path / "resume.pdf")
 
         resume_id = uuid.uuid4()
@@ -184,6 +186,33 @@ def test_generate_succeeds_for_own_profile(client, tmp_path):
         assert mock_resume_repo_cls.return_value.create_from_generation.call_args.kwargs["report"] == _REPORT
 
 
+def test_generate_returns_503_when_gemini_daily_limit_exceeded(client):
+    """The budget check must run strictly before the paid Gemini call, not after."""
+    from services.repository.gemini_usage_repository import GeminiDailyLimitExceeded
+
+    job_id, profile_id = uuid.uuid4(), uuid.uuid4()
+    with patch("api.v1.resume.JobRepository") as mock_job_repo_cls, \
+         patch("api.v1.resume.ProfileRepository") as mock_profile_repo_cls, \
+         patch("api.v1.resume.ResumeGenerationAgent") as mock_agent_cls, \
+         patch("api.v1.resume.GeminiUsageRepository") as mock_usage_repo_cls:
+        mock_job_repo_cls.return_value.get_by_id = AsyncMock(return_value=_job(job_id))
+        mock_profile_repo_cls.return_value.get_by_id = AsyncMock(
+            return_value=UserProfile(id=profile_id, user_id=_OWNER_ID)
+        )
+        mock_agent_cls.return_value.generate = AsyncMock()
+        mock_usage_repo_cls.return_value.increment_and_check = AsyncMock(
+            side_effect=GeminiDailyLimitExceeded(limit=500, call_count=501)
+        )
+
+        resp = client.post(
+            "/v1/resumes/generate",
+            json={"user_profile_id": str(profile_id), "job_id": str(job_id)},
+        )
+
+        assert resp.status_code == 503
+        mock_agent_cls.return_value.generate.assert_not_called()
+
+
 def test_generate_always_uses_template_renderer_regardless_of_source_document(client, tmp_path):
     """The HTML/Jinja2 template (resume_renderer.render_pdf) is now the sole
     renderer — a profile with a real .docx/.pdf source document must still
@@ -195,6 +224,7 @@ def test_generate_always_uses_template_renderer_regardless_of_source_document(cl
     with patch("api.v1.resume.JobRepository") as mock_job_repo_cls, \
          patch("api.v1.resume.ProfileRepository") as mock_profile_repo_cls, \
          patch("api.v1.resume.ResumeGenerationAgent") as mock_agent_cls, \
+         patch("api.v1.resume.GeminiUsageRepository") as mock_usage_repo_cls, \
          patch(
              "api.v1.resume.render_within_page_limit",
              return_value=(b"%PDF-1.4 fake", _GENERATION_RESULT["optimized_resume"]),
@@ -209,6 +239,7 @@ def test_generate_always_uses_template_renderer_regardless_of_source_document(cl
             )
         )
         mock_agent_cls.return_value.generate = AsyncMock(return_value=_GENERATION_RESULT)
+        mock_usage_repo_cls.return_value.increment_and_check = AsyncMock(return_value=1)
         mock_storage_cls.return_value.save.return_value = str(tmp_path / "rendered.pdf")
 
         resume_id = uuid.uuid4()

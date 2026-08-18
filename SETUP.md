@@ -29,14 +29,24 @@
    cd /Users/shinaanafi/pathfinder
    docker compose --env-file backend/.env up -d
    ```
-2. Start the backend:
+2. Apply migrations:
+   ```
+   cd backend
+   alembic upgrade head
+   ```
+   Schema is Alembic's job now, not `create_all` — the app no longer creates tables on
+   startup (see `backend/app/main.py`'s lifespan). Changing a model? Run
+   `alembic revision --autogenerate -m "<description>"`, review the generated file by
+   hand (autogenerate gets it wrong often enough to always check), then `alembic upgrade
+   head` locally and commit the migration file alongside the model change.
+3. Start the backend:
    ```
    cd /Users/shinaanafi/pathfinder/backend
    source ../.venv/bin/activate
    uvicorn app.main:app --host 0.0.0.0 --port 8003
    ```
    Add `--reload` while actively editing backend code.
-3. Confirm it's up:
+4. Confirm it's up:
    ```
    curl http://localhost:8003/health
    ```

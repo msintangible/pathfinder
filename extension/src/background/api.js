@@ -10,8 +10,7 @@
 
 import { getAuthToken, clearAuthToken } from "../shared/auth.js";
 import { loadProfile, saveProfileId } from "../shared/profileApi.js";
-
-const DEFAULT_BASE_URL = "http://localhost:8003";
+import { DEFAULT_BACKEND_URL } from "../shared/constants.js";
 
 // A hung backend (or a bad backendUrl pointing nowhere) must not hang the
 // calling UI action forever — fetch() has no built-in timeout, so every
@@ -21,7 +20,7 @@ const REQUEST_TIMEOUT_MS = 60000;
 
 export async function getBaseUrl() {
   const { backendUrl } = await chrome.storage.local.get("backendUrl");
-  return (backendUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  return (backendUrl || DEFAULT_BACKEND_URL).replace(/\/+$/, "");
 }
 
 /** fetch() with a hard timeout. Rejects with an AbortError after REQUEST_TIMEOUT_MS. */

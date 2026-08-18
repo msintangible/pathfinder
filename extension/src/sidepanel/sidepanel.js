@@ -35,7 +35,10 @@ const backendUrlInput = document.getElementById("backend-url");
 // NOTE: the "Your Profile" section is now owned by the ES module
 // profile/index.js (mounted into #profile-root). Profile logic lives there.
 
-const DEFAULT_BACKEND_URL = "http://localhost:8003";
+// Kept in sync by hand with shared/constants.js's DEFAULT_BACKEND_URL — this
+// file loads as a classic script (see sidepanel.html), not a module, so it
+// can't import the shared constant directly.
+const DEFAULT_BACKEND_URL = "https://pathfinder-x4lb.onrender.com";
 
 // Remove debug-only elements from the DOM entirely (not just hidden) so they
 // never render when DEBUG_MODE is off.

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.rate_limit import generation_rate_limit
 from core.security import get_current_user, get_current_user_allow_query_token
 from database.session import get_db
@@ -16,6 +17,7 @@ from schemas.jobs import JobResponse
 from schemas.profile import CandidateProfile
 from schemas.resume import GenerateResumeRequest, ResumeGenerationResponse
 from services.llm_output import LLMOutputError
+from services.repository.gemini_usage_repository import GeminiDailyLimitExceeded, GeminiUsageRepository
 from services.repository.job_repository import JobRepository
 from services.repository.profile_repository import ProfileRepository
 from services.repository.resume_repository import ResumeRepository
@@ -90,6 +92,7 @@ async def generate_resume(
     agent = ResumeGenerationAgent()
     profile_dict = _profile_to_dict(profile)
     try:
+        await GeminiUsageRepository(session).increment_and_check(settings.gemini_daily_call_limit)
         result = await agent.generate(
             profile=profile_dict,
             job=_job_to_dict(job),
@@ -97,6 +100,8 @@ async def generate_resume(
         )
     except LLMOutputError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except GeminiDailyLimitExceeded as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     rendered_bytes, rendered_file_format, layout_preserved, rendered_resume = _render_resume(profile, result)
 

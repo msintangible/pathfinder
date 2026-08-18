@@ -27,7 +27,7 @@ export const Endpoint = Object.freeze({
   RESUME_GENERATE: "/v1/resumes/generate",
 });
 
-export const DEFAULT_BACKEND_URL = "http://localhost:8003";
+export const DEFAULT_BACKEND_URL = "https://pathfinder-x4lb.onrender.com";
 
 /** CV upload constraints. DOCX (not just PDF) is accepted so resume generation
  *  can edit the candidate's original file in place instead of rendering a

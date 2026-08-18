@@ -17,7 +17,6 @@ sys.path.insert(0, _BACKEND_DIR)
 sys.path.insert(0, os.path.join(_BACKEND_DIR, ".."))
 
 from database.session import engine
-from models.base import Base
 
 # Without this, the root logger stays at its default WARNING level and every
 # logger.info/debug call app-wide (resume_generation_agent, optimization_validator,
@@ -30,9 +29,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup (use Alembic in production instead)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Schema management is Alembic's job now (see backend/alembic/), run via
+    # `alembic upgrade head` before the process starts — not here, so a
+    # failed migration hard-fails the deploy instead of booting against a
+    # stale schema.
     yield
     await engine.dispose()
 

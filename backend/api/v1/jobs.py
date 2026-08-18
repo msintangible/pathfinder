@@ -2,12 +2,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.security import get_current_user
 from schemas.jobs import AnalyzeJobRequest, JobResponse
 from database.session import get_db
 from models.user import User
 from services.job_analysis_agent import JobAnalysisAgent
 from services.llm_output import LLMOutputError
+from services.repository.gemini_usage_repository import GeminiDailyLimitExceeded, GeminiUsageRepository
 from services.repository.job_repository import JobRepository
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -27,9 +29,12 @@ async def analyze_job(
 
     agent = JobAnalysisAgent()
     try:
+        await GeminiUsageRepository(session).increment_and_check(settings.gemini_daily_call_limit)
         analysis = await agent.analyze(raw_text=body.raw_text, url=url)
     except LLMOutputError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except GeminiDailyLimitExceeded as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     repo = JobRepository(session)
     job = await repo.create_from_analysis(

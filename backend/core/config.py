@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     rate_limit_default: int = 60
     rate_limit_generation: int = 10
 
+    # In-app backstop against unexpected Gemini API bills — the Google Cloud
+    # Console quota/budget cap is the other, external half of this safety net.
+    gemini_daily_call_limit: int = 500
+
     @model_validator(mode="after")
     def _require_real_jwt_secret_in_production(self) -> "Settings":
         if self.environment == "production" and self.jwt_secret_key == _DEFAULT_JWT_SECRET:

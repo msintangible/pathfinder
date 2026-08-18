@@ -43,8 +43,10 @@ def test_requires_authentication():
 def test_analyze_succeeds_when_authenticated(client):
     job_id = uuid.uuid4()
     with patch("api.v1.jobs.JobAnalysisAgent") as mock_agent_cls, \
-         patch("api.v1.jobs.JobRepository") as mock_repo_cls:
+         patch("api.v1.jobs.JobRepository") as mock_repo_cls, \
+         patch("api.v1.jobs.GeminiUsageRepository") as mock_usage_repo_cls:
         mock_agent_cls.return_value.analyze = AsyncMock(return_value={"title": "Backend Engineer"})
+        mock_usage_repo_cls.return_value.increment_and_check = AsyncMock(return_value=1)
         mock_repo_cls.return_value.create_from_analysis = AsyncMock(
             return_value=Job(
                 id=job_id,
@@ -60,3 +62,20 @@ def test_analyze_succeeds_when_authenticated(client):
         assert resp.status_code == 200
         assert resp.json()["id"] == str(job_id)
         mock_agent_cls.return_value.analyze.assert_called_once()
+
+
+def test_analyze_returns_503_when_gemini_daily_limit_exceeded(client):
+    """The budget check must run strictly before the paid Gemini call, not after."""
+    from services.repository.gemini_usage_repository import GeminiDailyLimitExceeded
+
+    with patch("api.v1.jobs.JobAnalysisAgent") as mock_agent_cls, \
+         patch("api.v1.jobs.GeminiUsageRepository") as mock_usage_repo_cls:
+        mock_agent_cls.return_value.analyze = AsyncMock()
+        mock_usage_repo_cls.return_value.increment_and_check = AsyncMock(
+            side_effect=GeminiDailyLimitExceeded(limit=500, call_count=501)
+        )
+
+        resp = client.post("/v1/jobs/analyze", json={"raw_text": "We are hiring a backend engineer."})
+
+        assert resp.status_code == 503
+        mock_agent_cls.return_value.analyze.assert_not_called()

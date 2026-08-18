@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from pydantic import HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.rate_limit import default_rate_limit
 from core.security import get_current_user
 from database.session import get_db
@@ -24,6 +25,7 @@ from services.github_profile_fetcher import fetch_github_profile
 from services.llm_output import LLMOutputError
 from services.pdf_text_extractor import PDFExtractionError, extract_pdf_text
 from services.portfolio_scraper import fetch_portfolio_text
+from services.repository.gemini_usage_repository import GeminiDailyLimitExceeded, GeminiUsageRepository
 from services.repository.profile_repository import ProfileRepository
 from services.storage.local_storage import LocalResumeStorage
 
@@ -132,9 +134,12 @@ async def import_profile(
 
     agent = CandidateProfileAgent()
     try:
+        await GeminiUsageRepository(session).increment_and_check(settings.gemini_daily_call_limit)
         analysis = await agent.analyze(sources)
     except LLMOutputError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except GeminiDailyLimitExceeded as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     repo = ProfileRepository(session)
     profile = await repo.create_from_analysis(
