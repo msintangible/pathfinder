@@ -57,11 +57,22 @@ async function ensureOffscreenDocument() {
   }
 }
 
-function setToolbarIcon(isDark) {
+/** Exported for tests. `isRetry` is internal — callers always omit it. */
+export function setToolbarIcon(isDark, isRetry = false) {
   const path = isDark
     ? { 16: "icons/icon16-dark.png", 32: "icons/icon32-dark.png" }
     : { 16: "icons/icon16.png", 32: "icons/icon32.png" };
-  chrome.action.setIcon({ path }).catch((err) => console.error("[Pathfinder]", err));
+  chrome.action.setIcon({ path }).catch((err) => {
+    // A just-(re)started service worker's resource loader can transiently
+    // fail this call ("Failed to fetch") even though the icon files exist —
+    // seen right after a dev-mode reload. One retry after a short delay
+    // clears it; a second failure is logged as a real problem.
+    if (!isRetry) {
+      setTimeout(() => setToolbarIcon(isDark, true), 500);
+      return;
+    }
+    console.error("[Pathfinder]", err);
+  });
 }
 
 // ---------------------------------------------------------------------------
