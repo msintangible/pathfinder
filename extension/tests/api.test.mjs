@@ -74,6 +74,23 @@ await test("analyzeJob clears the cached token on a 401", async () => {
   assert(storedLocal.authToken === undefined, "cached token cleared after 401");
 });
 
+await test("analyzeJob self-heals a stale token: retries once after a 401 and succeeds with a freshly minted one", async () => {
+  storedLocal.authToken = "stale-token";
+  queue = [
+    { status: 401, body: { detail: "Invalid or expired token" } },
+    { status: 200, body: { id: "job-1" } },
+  ];
+  requests.length = 0;
+
+  const result = await analyzeJob({ raw_text: "We are hiring." });
+
+  assert(result.ok === true, "ok after self-heal retry");
+  const analyzeCalls = requests.filter((r) => r.url.endsWith("/v1/jobs/analyze"));
+  assert(analyzeCalls.length === 2, "retried exactly once");
+  assert(analyzeCalls[0].init.headers.Authorization === "Bearer stale-token", "first attempt used the cached token");
+  assert(analyzeCalls[1].init.headers.Authorization === "Bearer test-token", "retry used a freshly minted token");
+});
+
 await test("generateResume attaches the cached auth token as a Bearer header", async () => {
   nextResponse = { status: 200, body: { download_url: "/v1/resumes/r-1/download" } };
   requests.length = 0;
