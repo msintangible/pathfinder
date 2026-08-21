@@ -33,6 +33,7 @@ function createChromeMock(setIconResults = []) {
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} },
+      getURL: (path) => `chrome-extension://test-id/${path}`,
     },
     sidePanel: { setPanelBehavior: async () => {} },
     tabs: { onRemoved: { addListener: () => {} } },
@@ -147,6 +148,20 @@ await test("real navigation (different tab URL) resets rather than merges, even 
 });
 
 // ---------------------------------------------------------------------------
+await test("setToolbarIcon: passes absolute chrome-extension:// URLs, not relative paths", async () => {
+  const { chrome, setIconCalls } = createChromeMock();
+  const setToolbarIcon = await loadSetToolbarIcon(chrome);
+
+  setToolbarIcon(false);
+  await sleep(50);
+
+  assert(setIconCalls.length === 1, `expected 1 setIcon attempt, got ${setIconCalls.length}`);
+  assert(
+    setIconCalls[0].path[16] === "chrome-extension://test-id/icons/icon16.png",
+    `expected an absolute URL, got ${setIconCalls[0].path[16]}`
+  );
+});
+
 await test("setToolbarIcon: a transient setIcon failure is retried once and succeeds silently", async () => {
   const { chrome, setIconCalls } = createChromeMock(["fail", "ok"]);
   const setToolbarIcon = await loadSetToolbarIcon(chrome);
@@ -159,8 +174,9 @@ await test("setToolbarIcon: a transient setIcon failure is retried once and succ
 
   console.error = originalConsoleError;
   assert(setIconCalls.length === 2, `expected 2 setIcon attempts, got ${setIconCalls.length}`);
-  assert(setIconCalls[0].path[16] === "icons/icon16-dark.png", "first attempt used the dark variant");
-  assert(setIconCalls[1].path[16] === "icons/icon16-dark.png", "retry used the same dark variant");
+  const expectedUrl = "chrome-extension://test-id/icons/icon16-dark.png";
+  assert(setIconCalls[0].path[16] === expectedUrl, "first attempt used an absolute dark-variant URL");
+  assert(setIconCalls[1].path[16] === expectedUrl, "retry used the same absolute dark-variant URL");
   assert(logged.length === 0, "a successful retry logs nothing");
 });
 

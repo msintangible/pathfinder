@@ -57,16 +57,22 @@ async function ensureOffscreenDocument() {
   }
 }
 
-/** Exported for tests. `isRetry` is internal — callers always omit it. */
+/**
+ * Exported for tests. `isRetry` is internal — callers always omit it.
+ *
+ * Paths are resolved to absolute chrome-extension:// URLs via
+ * chrome.runtime.getURL() rather than passed as relative strings — a
+ * relative path here reliably fails with "Failed to fetch" on a "type":
+ * "module" service worker (this one, manifest.json), a documented MV3
+ * quirk where the module worker's resource-resolution base URL doesn't
+ * match what setIcon() expects from a plain string. The one-retry fallback
+ * stays as cheap insurance against any other transient failure.
+ */
 export function setToolbarIcon(isDark, isRetry = false) {
   const path = isDark
-    ? { 16: "icons/icon16-dark.png", 32: "icons/icon32-dark.png" }
-    : { 16: "icons/icon16.png", 32: "icons/icon32.png" };
+    ? { 16: chrome.runtime.getURL("icons/icon16-dark.png"), 32: chrome.runtime.getURL("icons/icon32-dark.png") }
+    : { 16: chrome.runtime.getURL("icons/icon16.png"), 32: chrome.runtime.getURL("icons/icon32.png") };
   chrome.action.setIcon({ path }).catch((err) => {
-    // A just-(re)started service worker's resource loader can transiently
-    // fail this call ("Failed to fetch") even though the icon files exist —
-    // seen right after a dev-mode reload. One retry after a short delay
-    // clears it; a second failure is logged as a real problem.
     if (!isRetry) {
       setTimeout(() => setToolbarIcon(isDark, true), 500);
       return;
