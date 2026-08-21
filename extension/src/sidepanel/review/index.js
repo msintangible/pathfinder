@@ -11,7 +11,10 @@
  *
  * The Download resume button reuses shared/openResume.js — the only
  * mechanism this codebase has for getting the generated file — rather than
- * re-implementing it. Revert swaps a row's own displayed text (see
+ * re-implementing it, then hands off to success/index.js's Screen 12 with
+ * the kept-count as it stood at the moment of the click (reverts made after
+ * downloading don't retroactively change what was actually in the file).
+ * Revert swaps a row's own displayed text (see
  * shared/diffChangeRow.js) and updates the on-screen "kept" count, but it
  * doesn't regenerate the downloaded file (the backend has no endpoint to
  * exclude specific patches and re-render) — Download always returns the
@@ -27,10 +30,12 @@
  */
 
 import { loadProfile } from "../../shared/profileApi.js";
+import { incrementWeeklyCount } from "../../shared/weeklyCount.js";
 import { pfHeader } from "../shared/header.js";
 import { diffChangeRow } from "../shared/diffChangeRow.js";
 import { fitWarningBanner } from "../shared/fitWarningBanner.js";
 import { openResume } from "../shared/openResume.js";
+import { showDownloadSuccessScreen } from "../success/index.js";
 import { buildChanges } from "./buildChanges.js";
 import { buildGaps } from "./buildGaps.js";
 
@@ -147,7 +152,17 @@ function buildScreen(changes, title, company, downloadUrl, gaps) {
   const downloadBtn = document.createElement("button");
   downloadBtn.className = "review-download-btn pf-btn pf-btn--block pf-btn--fill";
   downloadBtn.textContent = "Download resume";
-  downloadBtn.addEventListener("click", () => openResume(downloadUrl));
+  downloadBtn.addEventListener("click", async () => {
+    openResume(downloadUrl);
+    const weeklyCount = await incrementWeeklyCount();
+    showDownloadSuccessScreen({
+      title,
+      company,
+      keptCount: changes.length - reverted.size,
+      totalCount: changes.length,
+      weeklyCount,
+    });
+  });
   footer.appendChild(downloadBtn);
 
   screen.appendChild(footer);

@@ -1,23 +1,29 @@
 /**
- * Idle screen controller — Screen 1 in the redesign: "no job page, returning
- * user" state (docs/pathfinder-uiux-requirements.md, page-detection states).
+ * Idle screen controller — Screens 1 and 8 in the redesign: the two "no job
+ * page" states, branching on whether a profile has been imported yet
+ * (docs/pathfinder-uiux-requirements.md, page-detection states).
  *
- * Shows only when the tab has zero detection confidence (truly no signal)
- * AND a profile already exists. Any non-zero confidence — including the
- * keywords-only state, which also has isJobPage === false — belongs to
- * detection/index.js's 3 job-page-ish screens; this module deliberately
- * no-ops rather than fall back to legacy in that case, so the two modules
- * can't race each other for the same tab. No profile yet (the "new user"
- * idle variant isn't built yet) falls back to the legacy always-visible
- * card stack, unchanged.
+ * Shows only when the tab has zero detection confidence (truly no signal).
+ * Any non-zero confidence — including the keywords-only state, which also
+ * has isJobPage === false — belongs to detection/index.js's 3 job-page-ish
+ * screens; this module deliberately no-ops rather than claim the panel in
+ * that case, so the two modules can't race each other for the same tab.
  *
- * Recent activity always shows 0 — there is no application-history tracking
- * anywhere in the codebase yet (checked extension storage and the backend
- * models). Wiring a real count is a follow-up once the tailoring flow
- * (screens 3-7) exists to produce something worth counting.
+ * Screen 8 (no profile) uses the reworked layout from "Pathfinder New
+ * Screens.dc.html", not the original in README.md — the original's "View
+ * profile" link has nothing to point to for a user who hasn't imported one
+ * yet. The reworked version's "How it works" footer link is omitted rather
+ * than shipped as a dead link, since no destination content exists for it.
+ *
+ * Recent activity (Screen 1 only) shows the real weekly count
+ * (shared/weeklyCount.js), incremented so far only by review/index.js's
+ * "Download resume" — the design's other trigger, a submitted autofill,
+ * doesn't exist yet. At zero the whole section is omitted rather than shown
+ * as "0" (design note: never a scolding empty state).
  */
 
 import { loadProfile } from "../../shared/profileApi.js";
+import { loadWeeklyCount } from "../../shared/weeklyCount.js";
 import { pfHeader } from "../shared/header.js";
 
 const root = document.getElementById("idle-root");
@@ -65,8 +71,8 @@ function statusBlock() {
   return el;
 }
 
-/** Quiet, factual trace of recent activity — always 0 today, see module doc. */
-function activitySection() {
+/** Quiet, factual trace of recent activity. Caller omits this entirely at zero. */
+function activitySection(weeklyCount) {
   const el = document.createElement("div");
   el.className = "idle-section";
   el.appendChild(sectionLabel("Recent activity"));
@@ -76,7 +82,7 @@ function activitySection() {
 
   const count = document.createElement("span");
   count.className = "idle-activity__count";
-  count.textContent = "0";
+  count.textContent = String(weeklyCount);
 
   const text = document.createElement("span");
   text.className = "idle-activity__text";
@@ -85,6 +91,79 @@ function activitySection() {
   row.append(count, text);
   el.appendChild(row);
   return el;
+}
+
+/** Document icon in a 40px outlined circle — Screen 8's icon, distinct from
+ *  Screen 1's plain status dot (same circle, different content). */
+function importIcon() {
+  const dot = document.createElement("div");
+  dot.className = "idle-dot";
+  dot.innerHTML =
+    '<svg width="17" height="17" viewBox="0 0 18 18" fill="none" aria-hidden="true">' +
+    '<path d="M4.5 2.5 h6 l3 3 v10 h-9 z M10.5 2.5 v3 h3" stroke="var(--label)" stroke-width="1.4" stroke-linejoin="round"/>' +
+    "</svg>";
+  return dot;
+}
+
+/** Icon + heading + body + primary action — Screen 8's activation gate.
+ *  Import CV is the only real action; everything else recedes to the footer. */
+function newUserStatusBlock() {
+  const el = document.createElement("div");
+  el.className = "idle-status newuser-status";
+
+  const heading = document.createElement("h2");
+  heading.className = "idle-heading";
+  heading.textContent = "Import your CV to get started";
+
+  const body = document.createElement("p");
+  body.className = "idle-body";
+  body.textContent = "Pathfinder tailors this one CV to every job you open. Your original is never changed.";
+
+  el.append(importIcon(), heading, body);
+  return el;
+}
+
+function newUserAction(onImportCV) {
+  const el = document.createElement("div");
+  el.className = "newuser-action";
+
+  const button = document.createElement("button");
+  button.className = "newuser-import-btn pf-btn pf-btn--block pf-btn--fill";
+  button.textContent = "Import CV";
+  button.addEventListener("click", onImportCV);
+
+  const caption = document.createElement("p");
+  caption.className = "newuser-caption";
+  caption.textContent = "Takes 30 seconds · PDF or Word";
+
+  el.append(button, caption);
+  return el;
+}
+
+/** Page status, demoted to a quiet footer line below the primary action. */
+function newUserFooter() {
+  const el = document.createElement("div");
+  el.className = "newuser-footer";
+
+  const status = document.createElement("p");
+  status.className = "newuser-footer__status";
+  status.textContent = "No job detected yet";
+
+  el.appendChild(status);
+  return el;
+}
+
+function buildNewUserScreen(onImportCV) {
+  const screen = document.createElement("div");
+  screen.className = "idle-screen";
+  screen.appendChild(pfHeader());
+
+  const main = document.createElement("div");
+  main.className = "idle-main";
+  main.append(newUserStatusBlock(), newUserAction(onImportCV), newUserFooter());
+
+  screen.appendChild(main);
+  return screen;
 }
 
 /** Profile status + the only action offered in this state. */
@@ -108,14 +187,16 @@ function profileSection(onViewProfile) {
   return el;
 }
 
-function buildScreen(onViewProfile) {
+function buildScreen(onViewProfile, weeklyCount) {
   const screen = document.createElement("div");
   screen.className = "idle-screen";
   screen.appendChild(pfHeader());
 
   const main = document.createElement("div");
   main.className = "idle-main";
-  main.append(statusBlock(), divider(), activitySection(), divider(), profileSection(onViewProfile));
+  main.append(statusBlock(), divider());
+  if (weeklyCount > 0) main.append(activitySection(weeklyCount), divider());
+  main.append(profileSection(onViewProfile));
 
   screen.appendChild(main);
   return screen;
@@ -133,7 +214,7 @@ function showLegacy() {
   if (reviewScreenRoot) reviewScreenRoot.hidden = true;
 }
 
-function showIdleScreen() {
+async function showIdleScreen() {
   legacyRoot.hidden = true;
   // Defensive: a detection-state, loading, or review screen may still be
   // visible from before the user switched to this tab — claim the panel outright.
@@ -141,8 +222,25 @@ function showIdleScreen() {
   if (detectionScreenRoot) detectionScreenRoot.hidden = true;
   const reviewScreenRoot = document.getElementById("review-screen-root");
   if (reviewScreenRoot) reviewScreenRoot.hidden = true;
+  const weeklyCount = await loadWeeklyCount();
   root.innerHTML = "";
-  root.appendChild(buildScreen(showLegacy));
+  root.appendChild(buildScreen(showLegacy, weeklyCount));
+  root.hidden = false;
+}
+
+/** Screen 8: no profile imported yet. "Import CV" reveals the legacy stack,
+ *  same mechanism as Screen 1's "View profile" — that's where profile/index.js's
+ *  import flow already lives. */
+function showNewUserScreen() {
+  legacyRoot.hidden = true;
+  // Defensive: a detection-state or review screen may still be visible from
+  // before the user switched to this tab — claim the panel outright.
+  const detectionScreenRoot = document.getElementById("detection-screen-root");
+  if (detectionScreenRoot) detectionScreenRoot.hidden = true;
+  const reviewScreenRoot = document.getElementById("review-screen-root");
+  if (reviewScreenRoot) reviewScreenRoot.hidden = true;
+  root.innerHTML = "";
+  root.appendChild(buildNewUserScreen(showLegacy));
   root.hidden = false;
 }
 
@@ -173,9 +271,9 @@ async function evaluate() {
 
   const profile = await loadProfile();
   if (profile) {
-    showIdleScreen();
+    await showIdleScreen();
   } else {
-    showLegacy();
+    showNewUserScreen();
   }
 }
 

@@ -119,3 +119,36 @@
 /* .idle-btn-secondary carries no styles of its own — it's a bare hook for
  * tests/identity. Visuals come from the shared .pf-btn.pf-btn--pill classes
  * added alongside it (sidepanel.css). */
+
+/* Screen 8 (new-user idle) — shares .idle-status/.idle-dot/.idle-heading/
+ * .idle-body with Screen 1; only the bottom padding differs (the button
+ * block follows directly, instead of a divider + Recent Activity). */
+.newuser-status {
+  padding: 40px 4px 20px;
+}
+
+.newuser-action {
+  padding: var(--space-3) 4px 4px;
+}
+
+/* .newuser-import-btn carries no styles of its own — see the
+ * .idle-btn-secondary note above; visuals come from .pf-btn.pf-btn--fill. */
+
+.newuser-caption {
+  margin: var(--space-4) 0 0;
+  font-size: 13px;
+  color: var(--label);
+  text-align: center;
+}
+
+.newuser-footer {
+  margin-top: auto;
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.newuser-footer__status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--label);
+}
