@@ -52,6 +52,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
+    # The Pathfinder extension is the real client. Its origin is
+    # chrome-extension://<32-char id>, which changes per install, so match by
+    # shape instead of pinning a single id.
+    allow_origin_regex=r"^chrome-extension://[a-p]{32}$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
