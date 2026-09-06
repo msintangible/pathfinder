@@ -1,0 +1,112 @@
+/* Download-success screen (Screen 12) — reuses the :root design tokens and
+ * the shared .pf-btn system from sidepanel.css. */
+
+#success-screen-root {
+  margin: -12px; /* cancel body's global 12px padding for a full-bleed screen */
+}
+
+.success-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.success-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-8);
+}
+
+.success-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 44px 4px 40px;
+}
+
+/* Outlined, not filled — quieter than the filled markers used elsewhere. */
+.success-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid var(--outline);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-9);
+}
+
+.success-heading {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.4px;
+  line-height: 1.25;
+  margin: 0 0 var(--space-4);
+}
+
+.success-body {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 300px;
+  margin: 0;
+}
+
+.success-divider {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.success-section {
+  padding: var(--space-9) 4px;
+}
+
+.success-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--label);
+  margin: 0 0 var(--space-4);
+}
+
+.success-job-line {
+  font-size: 14px;
+  color: var(--text-3);
+  margin: 0 0 var(--space-2);
+}
+
+.success-kept-line {
+  font-size: 13px;
+  color: var(--label);
+  margin: 0;
+}
+
+.success-activity {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.success-activity__count {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.success-activity__text {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.success-footer {
+  margin-top: auto;
+  padding-top: var(--space-8);
+}
+
+/* .success-done-btn carries no styles of its own — bare hook for
+ * tests/identity, same convention as .idle-btn-secondary. Visuals come from
+ * the shared .pf-btn.pf-btn--outline classes added alongside it. */

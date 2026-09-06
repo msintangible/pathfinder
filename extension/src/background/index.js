@@ -57,11 +57,28 @@ async function ensureOffscreenDocument() {
   }
 }
 
-function setToolbarIcon(isDark) {
+/**
+ * Exported for tests. `isRetry` is internal — callers always omit it.
+ *
+ * Paths are resolved to absolute chrome-extension:// URLs via
+ * chrome.runtime.getURL() rather than passed as relative strings — a
+ * relative path here reliably fails with "Failed to fetch" on a "type":
+ * "module" service worker (this one, manifest.json), a documented MV3
+ * quirk where the module worker's resource-resolution base URL doesn't
+ * match what setIcon() expects from a plain string. The one-retry fallback
+ * stays as cheap insurance against any other transient failure.
+ */
+export function setToolbarIcon(isDark, isRetry = false) {
   const path = isDark
-    ? { 16: "icons/icon16-dark.png", 32: "icons/icon32-dark.png" }
-    : { 16: "icons/icon16.png", 32: "icons/icon32.png" };
-  chrome.action.setIcon({ path }).catch((err) => console.error("[Pathfinder]", err));
+    ? { 16: chrome.runtime.getURL("icons/icon16-dark.png"), 32: chrome.runtime.getURL("icons/icon32-dark.png") }
+    : { 16: chrome.runtime.getURL("icons/icon16.png"), 32: chrome.runtime.getURL("icons/icon32.png") };
+  chrome.action.setIcon({ path }).catch((err) => {
+    if (!isRetry) {
+      setTimeout(() => setToolbarIcon(isDark, true), 500);
+      return;
+    }
+    console.error("[Pathfinder]", err);
+  });
 }
 
 // ---------------------------------------------------------------------------

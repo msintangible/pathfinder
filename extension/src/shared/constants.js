@@ -18,6 +18,7 @@ export const StorageKey = Object.freeze({
   PROFILE_ID: "profileId",
   BACKEND_URL: "backendUrl",
   AUTH_TOKEN: "authToken",
+  WEEKLY_COUNT: "weeklyCount",
 });
 
 /** Backend routes. */

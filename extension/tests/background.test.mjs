@@ -21,15 +21,19 @@ async function test(name, fn) {
 }
 function assert(cond, msg) { if (!cond) throw new Error(msg || "assertion failed"); }
 
-/** Fresh chrome mock with an in-memory chrome.storage.session and badge call log. */
-function createChromeMock() {
+/** Fresh chrome mock with an in-memory chrome.storage.session and badge call log.
+ * `setIconResults` lets a test script setIcon's outcome per call (defaults to
+ * always resolving) for setToolbarIcon's retry tests. */
+function createChromeMock(setIconResults = []) {
   const session = new Map();
   const badgeCalls = [];
+  const setIconCalls = [];
   const chrome = {
     runtime: {
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} },
+      getURL: (path) => `chrome-extension://test-id/${path}`,
     },
     sidePanel: { setPanelBehavior: async () => {} },
     tabs: { onRemoved: { addListener: () => {} } },
@@ -43,9 +47,14 @@ function createChromeMock() {
     action: {
       setBadgeText: async (opts) => { badgeCalls.push({ kind: "text", ...opts }); },
       setBadgeBackgroundColor: async (opts) => { badgeCalls.push({ kind: "color", ...opts }); },
+      setIcon: async (opts) => {
+        setIconCalls.push(opts);
+        const outcome = setIconResults[setIconCalls.length - 1] ?? "ok";
+        if (outcome === "fail") throw new Error("Failed to fetch");
+      },
     },
   };
-  return { chrome, badgeCalls, session };
+  return { chrome, badgeCalls, session, setIconCalls };
 }
 
 /** Import a fresh instance of background/index.js against the given chrome mock. */
@@ -53,6 +62,17 @@ async function loadHandler(chrome) {
   global.chrome = chrome;
   const mod = await import(`../src/background/index.js?bust=${Math.random()}`);
   return mod.handlePageDetected;
+}
+
+/** Same fresh-import mechanics as loadHandler(), for setToolbarIcon(). */
+async function loadSetToolbarIcon(chrome) {
+  global.chrome = chrome;
+  const mod = await import(`../src/background/index.js?bust=${Math.random()}`);
+  return mod.setToolbarIcon;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function detection({ confidence, isJobPage = confidence >= 0.4 }) {
@@ -125,6 +145,54 @@ await test("real navigation (different tab URL) resets rather than merges, even 
   assert(stored.confidence === 0.1, `expected the new page's score to win outright, got ${stored.confidence}`);
   const lastText = badgeCalls.filter((c) => c.kind === "text").at(-1);
   assert(lastText.text === "", "badge should clear after navigating to a non-job page");
+});
+
+// ---------------------------------------------------------------------------
+await test("setToolbarIcon: passes absolute chrome-extension:// URLs, not relative paths", async () => {
+  const { chrome, setIconCalls } = createChromeMock();
+  const setToolbarIcon = await loadSetToolbarIcon(chrome);
+
+  setToolbarIcon(false);
+  await sleep(50);
+
+  assert(setIconCalls.length === 1, `expected 1 setIcon attempt, got ${setIconCalls.length}`);
+  assert(
+    setIconCalls[0].path[16] === "chrome-extension://test-id/icons/icon16.png",
+    `expected an absolute URL, got ${setIconCalls[0].path[16]}`
+  );
+});
+
+await test("setToolbarIcon: a transient setIcon failure is retried once and succeeds silently", async () => {
+  const { chrome, setIconCalls } = createChromeMock(["fail", "ok"]);
+  const setToolbarIcon = await loadSetToolbarIcon(chrome);
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  setToolbarIcon(true);
+  await sleep(600); // past the 500ms retry delay
+
+  console.error = originalConsoleError;
+  assert(setIconCalls.length === 2, `expected 2 setIcon attempts, got ${setIconCalls.length}`);
+  const expectedUrl = "chrome-extension://test-id/icons/icon16-dark.png";
+  assert(setIconCalls[0].path[16] === expectedUrl, "first attempt used an absolute dark-variant URL");
+  assert(setIconCalls[1].path[16] === expectedUrl, "retry used the same absolute dark-variant URL");
+  assert(logged.length === 0, "a successful retry logs nothing");
+});
+
+await test("setToolbarIcon: a persistent setIcon failure is logged after the retry also fails", async () => {
+  const { chrome, setIconCalls } = createChromeMock(["fail", "fail"]);
+  const setToolbarIcon = await loadSetToolbarIcon(chrome);
+  const originalConsoleError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(" "));
+
+  setToolbarIcon(false);
+  await sleep(600);
+
+  console.error = originalConsoleError;
+  assert(setIconCalls.length === 2, `expected 2 setIcon attempts, got ${setIconCalls.length}`);
+  assert(logged.some((l) => l.includes("Pathfinder")), "real failure logged once both attempts fail");
 });
 
 // ---------------------------------------------------------------------------

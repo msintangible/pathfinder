@@ -84,20 +84,34 @@ export async function checkHealth() {
   }
 }
 
+function postAnalyze(base, token, raw_text, url) {
+  return fetchWithTimeout(`${base}/v1/jobs/analyze`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ raw_text, url: url ?? null }),
+  });
+}
+
 export async function analyzeJob({ raw_text, url } = {}) {
   if (!raw_text) return { ok: false, error: "No page text to analyse." };
   try {
     const base = await getBaseUrl();
     const token = await getAuthToken(base);
-    const res = await fetchWithTimeout(`${base}/v1/jobs/analyze`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ raw_text, url: url ?? null }),
-    });
+    let res = await postAnalyze(base, token, raw_text, url);
+
+    // A cached token can go stale between mint and use (e.g. a backend
+    // redeploy/restart resets or rotates anonymous users) — self-heal by
+    // minting a fresh one and retrying once, same pattern as
+    // generateResume()'s stale-profile-id self-heal below.
+    if (res.status === 401) {
+      await clearAuthToken();
+      res = await postAnalyze(base, await getAuthToken(base), raw_text, url);
+    }
+
     if (!res.ok) {
       if (res.status === 401) await clearAuthToken();
       return sanitizedFailure(

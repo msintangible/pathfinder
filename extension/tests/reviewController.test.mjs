@@ -48,6 +48,7 @@ async function mount() {
   const dom = new JSDOM(
     `<!doctype html><html><body>
       <div id="review-screen-root" hidden></div>
+      <div id="success-screen-root" hidden></div>
       <div id="legacy-root"></div>
       <div id="idle-root"></div>
       <div id="detection-screen-root"></div>
@@ -57,6 +58,7 @@ async function mount() {
   );
   global.document = dom.window.document;
   const tabsCreated = [];
+  const storedLocal = {};
   global.chrome = {
     storage: {
       local: {
@@ -64,9 +66,10 @@ async function mount() {
           if (key === "profile") return { profile: PROFILE };
           if (key === "backendUrl") return { backendUrl: "http://localhost:8003" };
           if (key === "authToken") return { authToken: "test-token" };
+          if (key in storedLocal) return { [key]: storedLocal[key] };
           return {};
         },
-        set: async () => {},
+        set: async (values) => Object.assign(storedLocal, values),
       },
     },
     tabs: {
@@ -77,8 +80,10 @@ async function mount() {
   const mod = await import(`../src/sidepanel/review/index.js?bust=${Math.random()}`);
   return {
     root: document.getElementById("review-screen-root"),
+    successRoot: document.getElementById("success-screen-root"),
     legacyRoot: document.getElementById("legacy-root"),
     tabsCreated,
+    storedLocal,
     ...mod,
   };
 }
@@ -192,6 +197,39 @@ await test("Download resume opens the real download URL with an auth token", asy
   assert(tabsCreated.length === 1, "opens exactly one tab");
   assert(tabsCreated[0].url.includes("/v1/resumes/job-1/download"), "real download_url used");
   assert(tabsCreated[0].url.includes("token=test-token"), "auth token attached");
+});
+
+await test("Download resume increments the weekly count", async () => {
+  const { root, storedLocal, showReviewScreen } = await mount();
+  await showReviewScreen({ result: RESULT, title: "Data Analyst", company: "Reperio Human Capital" });
+
+  const downloadBtn = [...root.querySelectorAll("button")].find((b) => b.textContent === "Download resume");
+  downloadBtn.click();
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert(storedLocal.weeklyCount?.count === 1, `weekly count persisted at 1, got ${JSON.stringify(storedLocal.weeklyCount)}`);
+
+  downloadBtn.click();
+  await new Promise((r) => setTimeout(r, 0));
+  assert(storedLocal.weeklyCount?.count === 2, "second download increments again");
+});
+
+await test("Download resume hands off to the success screen with the real kept count", async () => {
+  const { root, successRoot, showReviewScreen } = await mount();
+  await showReviewScreen({ result: RESULT, title: "Data Analyst", company: "Reperio Human Capital" });
+
+  // Revert one of the two changes before downloading — the success screen
+  // must reflect what was actually kept, not the total.
+  root.querySelector(".pf-diff-row__revert").click();
+
+  const downloadBtn = [...root.querySelectorAll("button")].find((b) => b.textContent === "Download resume");
+  downloadBtn.click();
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert(successRoot.hidden === false, "success screen shown after download");
+  assert(root.hidden === true, "review screen hidden once success claims the panel");
+  assert(successRoot.textContent.includes("1 of 2 tailored changes kept"), "real kept count carried over, not the total");
+  assert(successRoot.textContent.includes("Data Analyst · Reperio Human Capital"), "job line carried over");
 });
 
 await test("missing title/company: no subtitle line rendered, no crash", async () => {
